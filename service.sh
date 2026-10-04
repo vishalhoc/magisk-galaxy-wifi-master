@@ -104,9 +104,16 @@ apply_wifi_settings() {
     fi
 }
 
+# Ensure MTK Wi-Fi driver power is active
+[ -e /dev/wmtWifi ] && echo 1 > /dev/wmtWifi 2>/dev/null
+
 # Apply initial boot settings
 apply_wifi_settings
 echo "[*] Initial settings applied" >> "$LOG"
+
+# Apply Direct Modem-to-Hotspot Passthrough & Carrier Bypass
+sh "$MODDIR/system/bin/wifi_master" direct_modem enable >> "$LOG" 2>&1
+echo "[*] Direct modem-to-hotspot pipeline enabled" >> "$LOG"
 
 # Start Busybox HTTPD Web Server on port 8095
 start_web_daemon() {
@@ -126,26 +133,66 @@ start_web_daemon
 
 # Background Persistent Guardian Loop (runs detached)
 (
+    KEEPALIVE_CNT=0
     while true; do
         sleep 6
 
         # 1. Keep Web UI alive
         start_web_daemon
 
-        # 2. Check and re-enforce driver settings against reversion
+        # 2. Keep MTK Wi-Fi chip awake
+        [ -e /dev/wmtWifi ] && echo 1 > /dev/wmtWifi 2>/dev/null
+
+        # 3. Check and re-enforce driver settings against reversion
         if [ -f /proc/net/wlan/cfg ]; then
-            # Verify if Probe256QAM or Nss reverted
             if ! grep -q "D:Probe256QAM|1" /proc/net/wlan/cfg 2>/dev/null || \
                ! grep -q "D:Nss|2" /proc/net/wlan/cfg 2>/dev/null; then
                 apply_wifi_settings
             fi
         fi
 
-        # 3. Check if hostapd_swlan0.conf is running with op_class=126 and patch if needed
+        # 4. Check if hostapd_swlan0.conf is running with op_class=126 and patch if needed
         CONF="/data/vendor/wifi/hostapd/hostapd_swlan0.conf"
         if [ -f "$CONF" ]; then
             if grep -q "op_class=126" "$CONF" 2>/dev/null; then
                 sed -i 's/op_class=126/op_class=128/g' "$CONF" 2>/dev/null
+            fi
+        fi
+
+        # 5. Maintain Direct Modem-to-Hotspot Passthrough & Upstream Routing
+        DM_CFG=$(grep "^DIRECT_MODEM_HOTSPOT=" /data/adb/galaxy_wifi_master.cfg 2>/dev/null | cut -d '=' -f 2-)
+        [ -z "$DM_CFG" ] && DM_CFG="1"
+        if [ "$DM_CFG" = "1" ]; then
+            # Sync dynamic policy routing across cellular reconnections
+            sh "$MODDIR/system/bin/wifi_master" sync_direct_routing 2>/dev/null || true
+
+            # Guarantee PURE_FORWARD and PURE_NAT remain at top of iptables
+            if ! iptables -C FORWARD -j PURE_FORWARD 2>/dev/null; then
+                iptables -w 2 -I FORWARD 1 -j PURE_FORWARD 2>/dev/null || true
+            fi
+            if ! iptables -t nat -C POSTROUTING -j PURE_NAT 2>/dev/null; then
+                iptables -w 2 -t nat -I POSTROUTING 1 -j PURE_NAT 2>/dev/null || true
+            fi
+
+            # Guarantee TTL normalization & TCPMSS PMTU clamp survive network resets
+            iptables -w 2 -t mangle -C POSTROUTING -j TTL --ttl-set 64 2>/dev/null || \
+                iptables -w 2 -t mangle -I POSTROUTING 1 -j TTL --ttl-set 64 2>/dev/null || true
+            iptables -w 2 -t mangle -C FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || \
+                iptables -w 2 -t mangle -I FORWARD 1 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+
+            # Keep carrier tethering offload disabled & DUN bypassed
+            settings put global tether_dun_required 0 2>/dev/null
+            settings put global tether_offload_disabled 1 2>/dev/null
+            setprop net.tethering.noprovisioning true 2>/dev/null
+
+            # Periodic 30s cellular WAN keepalive
+            KEEPALIVE_CNT=$((KEEPALIVE_CNT + 1))
+            if [ $KEEPALIVE_CNT -ge 5 ]; then
+                KEEPALIVE_CNT=0
+                WAN_IF=$(ip -4 -o addr show 2>/dev/null | grep -E "v4-rmnet|rmnet" | awk '{print $2}' | head -n1)
+                if [ -n "$WAN_IF" ]; then
+                    ping -c 1 -W 2 -I "$WAN_IF" 1.1.1.1 >/dev/null 2>&1 || true
+                fi
             fi
         fi
     done

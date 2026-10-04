@@ -137,6 +137,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
       <span class="badge badge-green" id="badge-mimo">2x2 MIMO (866M)</span>
       <span class="badge badge-green" id="badge-qam">256-QAM</span>
       <span class="badge" id="badge-cam">CAM: OFF</span>
+      <span class="badge badge-neon" id="badge-header-dm">⚡ DIRECT MODEM</span>
       <button class="refresh-btn" onclick="fetchStatus()">↺ Refresh</button>
     </div>
   </header>
@@ -358,6 +359,110 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   <!-- TAB 3: HOTSPOT & TETHERING -->
   <div id="tab-hotspot" class="tab-pane">
     <div class="grid-2">
+      <!-- Direct Modem-to-Hotspot (Zero Filtering / Carrier Bypass) Card -->
+      <div class="card" style="grid-column: 1 / -1; background: linear-gradient(135deg, rgba(17,24,39,0.85), rgba(30,41,59,0.75)); border: 1px solid rgba(59, 130, 246, 0.35); box-shadow: 0 8px 32px rgba(59, 130, 246, 0.15);">
+        <div class="card-header" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+          <div class="card-title" style="font-size:16px;">
+            <span style="font-size:20px;">⚡</span> Clean Direct Modem-to-Hotspot Engine
+            <span class="badge badge-neon" style="margin-left:8px;" id="badge-dm-status">DIRECT MODEM ACTIVE</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-direct-modem" onchange="setDirectModem(this.checked)">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <p style="font-size:12px; color:var(--text-sub); margin-bottom:16px; line-height:1.5;">
+          Direct interface-to-interface hardware passthrough between cellular modem (<code style="color:#93c5fd;">v4-rmnet* / rmnet*</code>) and wireless hotspot (<code style="color:#6ee7b7;">swlan0 / ap0</code>). Unconditional carrier bypass: eliminates tethering inspection, hop-count TTL detection, eBPF packet throttling, TCP MSS fragmentation drops, and DNS censorship.
+        </p>
+
+        <!-- Pipeline Diagram -->
+        <div style="background:rgba(0,0,0,0.35); border:1px solid var(--border); border-radius:10px; padding:12px 16px; margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:20px;">📱</span>
+            <div>
+              <div style="font-size:11px; color:var(--text-sub);">Hotspot Clients</div>
+              <div style="font-size:13px; font-weight:700; color:#fff;" id="dm-client-iface">swlan0 (Wi-Fi Hotspot)</div>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px; color:var(--accent); font-weight:700; font-size:12px;">
+            <span>───►</span>
+            <span style="background:rgba(6,182,212,0.15); border:1px solid rgba(6,182,212,0.3); padding:4px 8px; border-radius:6px; font-family:monospace;">PREF 7010 (Direct Table)</span>
+            <span>───►</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:20px;">📡</span>
+            <div>
+              <div style="font-size:11px; color:var(--text-sub);">Cellular WAN Bearer</div>
+              <div style="font-size:13px; font-weight:700; color:#93c5fd;" id="dm-wan-iface">v4-rmnet0 (5G/LTE CLAT)</div>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px; color:var(--success); font-weight:700; font-size:12px;">
+            <span>───►</span>
+            <span style="background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.3); padding:4px 8px; border-radius:6px; font-family:monospace;">PURE_NAT (Wire-Speed)</span>
+            <span>───►</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:20px;">🌐</span>
+            <div>
+              <div style="font-size:11px; color:var(--text-sub);">Internet Gateway</div>
+              <div style="font-size:13px; font-weight:700; color:#10b981;">Clean Internet</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Protection Badges Grid -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:10px;">
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:8px; padding:10px;">
+            <div style="font-size:11px; color:var(--text-sub);">TTL Normalization</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+              <span style="font-weight:700; color:#fff; font-size:13px;">TTL = 64 Fixed</span>
+              <span class="badge badge-green" id="badge-ttl">ACTIVE</span>
+            </div>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:8px; padding:10px;">
+            <div style="font-size:11px; color:var(--text-sub);">TCP MSS PMTU Clamp</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+              <span style="font-weight:700; color:#fff; font-size:13px;">Auto PMTU</span>
+              <span class="badge badge-green" id="badge-mss">ACTIVE</span>
+            </div>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:8px; padding:10px;">
+            <div style="font-size:11px; color:var(--text-sub);">Clean DNS Shield</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+              <span style="font-weight:700; color:#fff; font-size:13px;">1.1.1.1 DNAT</span>
+              <span class="badge badge-green" id="badge-dns">ACTIVE</span>
+            </div>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:8px; padding:10px;">
+            <div style="font-size:11px; color:var(--text-sub);">eBPF Offload Shield</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+              <span style="font-weight:700; color:#fff; font-size:13px;">Offload Disabled</span>
+              <span class="badge badge-green" id="badge-bpf">ACTIVE</span>
+            </div>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:8px; padding:10px;">
+            <div style="font-size:11px; color:var(--text-sub);">Carrier DUN Bypass</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+              <span style="font-weight:700; color:#fff; font-size:13px;">Native APN Only</span>
+              <span class="badge badge-green" id="badge-dun">ACTIVE</span>
+            </div>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:8px; padding:10px;">
+            <div style="font-size:11px; color:var(--text-sub);">Pure Forwarding Chain</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+              <span style="font-weight:700; color:#fff; font-size:13px;" id="dm-pkts-fwd">0 Pkts (0B)</span>
+              <span class="badge badge-neon" id="badge-pure-fwd">RULE 1</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Hotspot Configuration Card -->
       <div class="card">
         <div class="card-header">
@@ -703,6 +808,75 @@ async function fetchStatus() {
       </span>
     `).join("");
   }
+
+  // Direct Modem Passthrough Telemetry
+  const dm = data.direct_modem || {};
+  const dmToggle = document.getElementById("toggle-direct-modem");
+  if (dmToggle) dmToggle.checked = !!dm.enabled;
+
+  const dmBadge = document.getElementById("badge-dm-status");
+  if (dmBadge) {
+    dmBadge.innerText = dm.active ? "DIRECT MODEM ACTIVE" : (dm.enabled ? "BYPASS READY" : "DISABLED");
+    dmBadge.className = dm.active ? "badge badge-green" : (dm.enabled ? "badge badge-neon" : "badge badge-amber");
+  }
+
+  const headerDmBadge = document.getElementById("badge-header-dm");
+  if (headerDmBadge) {
+    headerDmBadge.innerText = dm.active ? "⚡ MODEM PASSTHROUGH" : "MODEM: STOCK";
+    headerDmBadge.className = dm.active ? "badge badge-neon" : "badge";
+  }
+
+  const clientIfaceEl = document.getElementById("dm-client-iface");
+  if (clientIfaceEl) {
+    clientIfaceEl.innerText = `${dm.hotspot_iface || 'swlan0'} (${dm.hotspot_ip || 'Hotspot'})`;
+  }
+
+  const wanIfaceEl = document.getElementById("dm-wan-iface");
+  if (wanIfaceEl) {
+    wanIfaceEl.innerText = `${dm.upstream_v4 || 'v4-rmnet0'} (5G/LTE CLAT)`;
+  }
+
+  const badgeTtl = document.getElementById("badge-ttl");
+  if (badgeTtl) {
+    badgeTtl.innerText = dm.ttl_normalized ? "TTL 64 ACTIVE" : "OFF";
+    badgeTtl.className = dm.ttl_normalized ? "badge badge-green" : "badge";
+  }
+
+  const badgeMss = document.getElementById("badge-mss");
+  if (badgeMss) {
+    badgeMss.innerText = dm.mss_clamped ? "CLAMPED" : "OFF";
+    badgeMss.className = dm.mss_clamped ? "badge badge-green" : "badge";
+  }
+
+  const badgeDns = document.getElementById("badge-dns");
+  if (badgeDns) {
+    badgeDns.innerText = dm.dns_shield ? "1.1.1.1 ACTIVE" : "OFF";
+    badgeDns.className = dm.dns_shield ? "badge badge-green" : "badge";
+  }
+
+  const badgeBpf = document.getElementById("badge-bpf");
+  if (badgeBpf) {
+    badgeBpf.innerText = dm.bpf_disabled ? "SHIELDED" : "ENABLED";
+    badgeBpf.className = dm.bpf_disabled ? "badge badge-green" : "badge badge-amber";
+  }
+
+  const badgeDun = document.getElementById("badge-dun");
+  if (badgeDun) {
+    badgeDun.innerText = dm.dun_bypassed ? "BYPASS OK" : "METERED";
+    badgeDun.className = dm.dun_bypassed ? "badge badge-green" : "badge badge-amber";
+  }
+
+  const pktsEl = document.getElementById("dm-pkts-fwd");
+  if (pktsEl) {
+    pktsEl.innerText = `${dm.pkts_forwarded || 0} Pkts (${dm.bytes_forwarded || '0B'})`;
+  }
+}
+
+async function setDirectModem(enabled) {
+  showToast(enabled ? "Enabling Direct Modem-to-Hotspot Passthrough & Carrier Bypass..." : "Disabling Direct Modem Passthrough...");
+  const res = await api("direct_modem", { val: enabled ? "enable" : "disable" });
+  showToast(res ? res.message : "Setting updated");
+  fetchStatus();
 }
 
 async function setQam(enabled) {

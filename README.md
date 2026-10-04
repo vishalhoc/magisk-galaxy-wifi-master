@@ -43,7 +43,14 @@ Operating System: **OneUI 5.1 / Android 13 (Linux 4.14.186)**
   * **Feature Accelerators**: One-click toggles for 256-QAM, CAM Gaming Mode, 2x2 MIMO 866M Boost, 160MHz Bandwidth, AutoPerf Monitor, DBDC Concurrency, Country Code selector, and TCP Congestion algorithms.
   * **Hotspot & Tethering**: Change SSID, password, band (2.4 GHz vs 5 GHz), channel, toggle 866 Mbps MIMO boost, and view connected clients with instant MAC blocking.
   * **Live `/proc/net/wlan/cfg` Editor**: Search and tune all 120+ MediaTek driver parameters in real-time.
-  * **Quick Profiles**: Instant switches for `[🎮 Gaming Mode]`, `[🚀 Max Throughput]`, `[🔋 Battery Saver]`, and `[↺ Stock Reset]`.
+### 8. ⚡ Clean Direct Modem-to-Hotspot Engine & Carrier Bypass
+* **Wire-Speed Zero-Restriction Forwarding**: Directly connects wireless clients on Samsung Mobile Hotspot (`swlan0`) or Virtual AP (`ap0`) to the cellular WAN interface (`v4-rmnet*` / `rmnet*`).
+* **Complete Carrier Tethering Bypass**:
+  * **TTL Normalization (`TTL=64`)**: Hides tethered devices from carrier deep packet inspection (DPI).
+  * **TCP MSS Clamping to PMTU**: Prevents packet fragmentation across 4G/5G mobile networks.
+  * **Encrypted/Clean DNS Redirection**: Redirects DNS queries directly to Cloudflare (`1.1.1.1`) and Google (`8.8.8.8`), bypassing ISP filtering.
+  * **BPF & DUN APN Shield**: Disables eBPF tether throttling and bypasses carrier DUN APN requirements.
+  * **Dynamic Policy Routing Guardian**: Tracks cellular table changes (e.g. 5G NSA/SA handovers) and binds `swlan0` (`pref 7010`) and `ap0` (`pref 7011`) with return path links (`pref 7000..7002`).
 
 ---
 
@@ -54,6 +61,9 @@ The module provides a command-line interface executable from root shell:
 ```bash
 # View complete JSON telemetry & hardware state
 su -c wifi_master status
+
+# Toggle Clean Direct Modem-to-Hotspot Passthrough (enable | disable | status)
+su -c wifi_master direct_modem enable
 
 # Toggle 2x2 MIMO 866 Mbps Boost (2 = 2x2 MIMO 866M, 1 = 1x1 SISO 433M)
 su -c wifi_master set_nss 2

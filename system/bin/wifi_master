@@ -19,7 +19,70 @@ BW5G=3
 TCP_CONG=bbr
 COUNTRY=00
 PROFILE=default
+DIRECT_MODEM_HOTSPOT=1
 EOF
+}
+
+sync_direct_routing() {
+    # 1. Detect Active Cellular WAN Routing Tables
+    ACTIVE_WAN_V4=$(ip -4 route show table all 2>/dev/null | grep -E '^default.*dev v4-rmnet' | sed -n 's/.*table \([^ ]*\).*/\1/p' | head -n1)
+    [ -z "$ACTIVE_WAN_V4" ] && ACTIVE_WAN_V4=$(ip -4 route show table all 2>/dev/null | grep -E '^default.*dev rmnet' | sed -n 's/.*table \([^ ]*\).*/\1/p' | head -n1)
+    [ -z "$ACTIVE_WAN_V4" ] && ACTIVE_WAN_V4=$(ip -4 route show table all 2>/dev/null | grep -E '^default.*dev ccmni' | sed -n 's/.*table \([^ ]*\).*/\1/p' | head -n1)
+
+    ACTIVE_WAN_V6=$(ip -6 route show table all 2>/dev/null | grep -E '^default.*dev rmnet' | sed -n 's/.*table \([^ ]*\).*/\1/p' | head -n1)
+
+    # 2. Add Link-Scope Subnet Return Routes & Rules in table main & 97 (Ensure bidirectional reachability)
+    for iface in swlan0 ap0; do
+        if ip link show "$iface" 2>/dev/null | grep -q "state UP"; then
+            IP_SUBNET=$(ip -4 -o addr show dev "$iface" 2>/dev/null | awk '{print $4}')
+            if [ -n "$IP_SUBNET" ]; then
+                ip route add "$IP_SUBNET" dev "$iface" scope link table main 2>/dev/null || true
+                ip route add "$IP_SUBNET" dev "$iface" scope link table 97 2>/dev/null || true
+                NET_PREFIX=$(echo "$IP_SUBNET" | sed 's/\.[0-9]*\//.0\//')
+                if [ -n "$NET_PREFIX" ] && ! ip rule show 2>/dev/null | grep -q "$NET_PREFIX.*lookup main"; then
+                    ip rule add from all to "$NET_PREFIX" lookup main pref 7000 2>/dev/null || true
+                fi
+            fi
+        fi
+    done
+
+    # Fallback static return rules for standard tethering subnets
+    if ! ip rule show 2>/dev/null | grep -q "7001:"; then
+        ip rule add from all to 192.168.43.0/24 lookup main pref 7001 2>/dev/null || true
+    fi
+    if ! ip rule show 2>/dev/null | grep -q "7002:"; then
+        ip rule add from all to 192.168.42.0/24 lookup main pref 7002 2>/dev/null || true
+    fi
+
+    # 4. Direct Interface-to-Modem Routing Rules (pref 7010 & 7011)
+    if [ -n "$ACTIVE_WAN_V4" ]; then
+        CUR_SWLAN_TBL=$(ip rule show 2>/dev/null | grep -E "7010:.*iif swlan0" | awk '{print $NF}' | head -n1)
+        if [ "$CUR_SWLAN_TBL" != "$ACTIVE_WAN_V4" ]; then
+            ip rule del pref 7010 2>/dev/null || true
+            ip rule add from all iif swlan0 lookup "$ACTIVE_WAN_V4" pref 7010 2>/dev/null || true
+        fi
+
+        CUR_AP_TBL=$(ip rule show 2>/dev/null | grep -E "7011:.*iif ap0" | awk '{print $NF}' | head -n1)
+        if [ "$CUR_AP_TBL" != "$ACTIVE_WAN_V4" ]; then
+            ip rule del pref 7011 2>/dev/null || true
+            ip rule add from all iif ap0 lookup "$ACTIVE_WAN_V4" pref 7011 2>/dev/null || true
+        fi
+    fi
+
+    # 5. IPv6 Direct Routing (pref 7010 & 7011)
+    if [ -n "$ACTIVE_WAN_V6" ]; then
+        CUR_SWLAN_V6=$(ip -6 rule show 2>/dev/null | grep -E "7010:.*iif swlan0" | awk '{print $NF}' | head -n1)
+        if [ "$CUR_SWLAN_V6" != "$ACTIVE_WAN_V6" ]; then
+            ip -6 rule del pref 7010 2>/dev/null || true
+            ip -6 rule add from all iif swlan0 lookup "$ACTIVE_WAN_V6" pref 7010 2>/dev/null || true
+        fi
+
+        CUR_AP_V6=$(ip -6 rule show 2>/dev/null | grep -E "7011:.*iif ap0" | awk '{print $NF}' | head -n1)
+        if [ "$CUR_AP_V6" != "$ACTIVE_WAN_V6" ]; then
+            ip -6 rule del pref 7011 2>/dev/null || true
+            ip -6 rule add from all iif ap0 lookup "$ACTIVE_WAN_V6" pref 7011 2>/dev/null || true
+        fi
+    fi
 }
 
 get_cfg_val() {
@@ -224,10 +287,10 @@ EOF
     RX_BYTES=0
     TX_BYTES=0
     if [ -f /proc/net/dev ]; then
-        DEV_LINE=$(grep 'wlan0:' /proc/net/dev 2>/dev/null)
+        DEV_LINE=$(grep 'wlan0:' /proc/net/dev 2>/dev/null | head -n 1)
         if [ -n "$DEV_LINE" ]; then
-            RX_BYTES=$(echo "$DEV_LINE" | awk '{print $2}')
-            TX_BYTES=$(echo "$DEV_LINE" | awk '{print $10}')
+            RX_BYTES=$(echo "$DEV_LINE" | awk '{print $2}' | tr -d '\r\n')
+            TX_BYTES=$(echo "$DEV_LINE" | awk '{print $10}' | tr -d '\r\n')
         fi
     fi
 
@@ -236,6 +299,59 @@ EOF
     CHIP_ID="MT6631 (0x6631) CONNSYS 2.0"
     CURRENT_PROFILE=$(get_cfg_val PROFILE)
     [ -z "$CURRENT_PROFILE" ] && CURRENT_PROFILE="default"
+
+    # 5. Direct Modem Passthrough Telemetry
+    DM_CFG=$(get_cfg_val DIRECT_MODEM_HOTSPOT)
+    [ -z "$DM_CFG" ] && DM_CFG="1"
+    DM_ENABLED=$([ "$DM_CFG" = "1" ] && echo true || echo false)
+    DM_ACTIVE=false
+    if iptables -w 2 -L FORWARD -n 2>/dev/null | grep -q "PURE_FORWARD"; then
+        DM_ACTIVE=true
+    fi
+
+    ACTIVE_WAN_V4=$(ip -4 route show table all 2>/dev/null | grep -E '^default.*dev v4-rmnet' | sed -n 's/.*table \([^ ]*\).*/\1/p' | head -n1)
+    [ -z "$ACTIVE_WAN_V4" ] && ACTIVE_WAN_V4=$(ip -4 route show table all 2>/dev/null | grep -E '^default.*dev rmnet' | sed -n 's/.*table \([^ ]*\).*/\1/p' | head -n1)
+    [ -z "$ACTIVE_WAN_V4" ] && ACTIVE_WAN_V4=$(ip -4 route show table all 2>/dev/null | grep -E '^default.*dev ccmni' | sed -n 's/.*table \([^ ]*\).*/\1/p' | head -n1)
+    [ -z "$ACTIVE_WAN_V4" ] && ACTIVE_WAN_V4="none"
+
+    ACTIVE_WAN_V6=$(ip -6 route show table all 2>/dev/null | grep -E '^default.*dev rmnet' | sed -n 's/.*table \([^ ]*\).*/\1/p' | head -n1)
+    [ -z "$ACTIVE_WAN_V6" ] && ACTIVE_WAN_V6="none"
+
+    SAP_IP=$(ip -4 addr show "$SAP_IFACE" 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d '/' -f 1)
+    [ -z "$SAP_IP" ] && SAP_IP="none"
+
+    TTL_ACTIVE=false
+    if [ "$(cat /proc/sys/net/ipv4/ip_default_ttl 2>/dev/null)" = "64" ] || iptables -w 2 -t mangle -L POSTROUTING -n 2>/dev/null | grep -q "TTL set to 64"; then
+        TTL_ACTIVE=true
+    fi
+
+    MSS_ACTIVE=false
+    if iptables -w 2 -t mangle -L FORWARD -n 2>/dev/null | grep -q "TCPMSS clamp to PMTU"; then
+        MSS_ACTIVE=true
+    fi
+
+    DNS_ACTIVE=false
+    if iptables -w 2 -t nat -L PREROUTING -n 2>/dev/null | grep -q "to:1.1.1.1:53"; then
+        DNS_ACTIVE=true
+    fi
+
+    BPF_ACTIVE=false
+    if [ "$(settings get global tether_offload_disabled 2>/dev/null)" = "1" ]; then
+        BPF_ACTIVE=true
+    fi
+
+    DUN_ACTIVE=false
+    if [ "$(settings get global tether_dun_required 2>/dev/null)" = "0" ]; then
+        DUN_ACTIVE=true
+    fi
+
+    FWD_PKTS=0
+    FWD_BYTES="0"
+    FWD_STATS=$(iptables -w 2 -L FORWARD -v -n 2>/dev/null | grep "PURE_FORWARD" | head -n 1)
+    if [ -n "$FWD_STATS" ]; then
+        FWD_PKTS=$(echo "$FWD_STATS" | awk '{print $1}')
+        FWD_BYTES=$(echo "$FWD_STATS" | awk '{print $2}')
+    fi
 
     # Emit JSON
     cat <<EOF
@@ -283,6 +399,21 @@ EOF
     "channel": "$SAP_CHANNEL",
     "clients": $CLIENTS_JSON,
     "blocked_macs": $BLOCKED_JSON
+  },
+  "direct_modem": {
+    "enabled": $DM_ENABLED,
+    "active": $DM_ACTIVE,
+    "upstream_v4": "$ACTIVE_WAN_V4",
+    "upstream_v6": "$ACTIVE_WAN_V6",
+    "hotspot_iface": "$SAP_IFACE",
+    "hotspot_ip": "$SAP_IP",
+    "ttl_normalized": $TTL_ACTIVE,
+    "mss_clamped": $MSS_ACTIVE,
+    "dns_shield": $DNS_ACTIVE,
+    "bpf_disabled": $BPF_ACTIVE,
+    "dun_bypassed": $DUN_ACTIVE,
+    "pkts_forwarded": "$FWD_PKTS",
+    "bytes_forwarded": "$FWD_BYTES"
   },
   "hardware": {
     "chip": "$CHIP_ID",
@@ -450,10 +581,20 @@ cmd_set_wifi() {
 
 cmd_set_hotspot() {
     ACTION="${1:-restart}"
-    if [ "$ACTION" = "enable" ]; then
-        cmd wifi start-softap 2>/dev/null || svc wifi startSoftAp 2>/dev/null
+    if [ "$ACTION" = "enable" ] || [ "$ACTION" = "1" ] || [ "$ACTION" = "start" ] || [ "$ACTION" = "on" ]; then
+        [ -e /dev/wmtWifi ] && echo 1 > /dev/wmtWifi 2>/dev/null
+        SAP_XML="/data/misc/apexdata/com.android.wifi/WifiConfigStoreSoftAp.xml"
+        SSID=$(grep 'name="WifiSsid"' "$SAP_XML" 2>/dev/null | sed -e 's/.*&quot;\(.*\)&quot;.*/\1/' -e 's/.*<string name="WifiSsid">\(.*\)<\/string>.*/\1/' | head -n 1)
+        [ -z "$SSID" ] && SSID="Galaxy M32 5G 70B0"
+        PASS=$(grep 'name="Passphrase"' "$SAP_XML" 2>/dev/null | sed -e 's/.*<string name="Passphrase">\(.*\)<\/string>.*/\1/' | head -n 1)
+        [ -z "$PASS" ] && PASS="1234567890"
+        BAND=$(grep -A 2 '<BandChannel>' "$SAP_XML" 2>/dev/null | grep 'name="Band"' | sed -e 's/.*value="\([0-9]*\)".*/\1/' | head -n 1)
+        BAND_ARG="-b 5"
+        [ "$BAND" = "1" ] && BAND_ARG="-b 2"
+        cmd wifi start-softap "$SSID" wpa2 "$PASS" $BAND_ARG 2>/dev/null || svc wifi startSoftAp 2>/dev/null || true
+        sync_direct_routing 2>/dev/null || true
     else
-        cmd wifi stop-softap 2>/dev/null || svc wifi stopSoftAp 2>/dev/null
+        cmd wifi stop-softap 2>/dev/null || svc wifi stopSoftAp 2>/dev/null || true
     fi
     echo "{\"success\":true,\"action\":\"$ACTION\",\"message\":\"Hotspot $ACTION command sent\"}"
 }
@@ -466,7 +607,7 @@ cmd_set_hotspot_cfg() {
 
     SAP_XML="/data/misc/apexdata/com.android.wifi/WifiConfigStoreSoftAp.xml"
     if [ -f "$SAP_XML" ]; then
-        [ -n "$NEW_SSID" ] && sed -i "s|<string name=\"WifiSsid\">&quot;.*&quot;<\/string>|<string name=\"WifiSsid\">&quot;$NEW_SSID&quot;<\/string>|" "$SAP_XML"
+        [ -n "$NEW_SSID" ] && sed -i "s|<string name=\"WifiSsid\">.*<\/string>|<string name=\"WifiSsid\">&quot;$NEW_SSID&quot;<\/string>|" "$SAP_XML"
         [ -n "$NEW_PASS" ] && sed -i "s|<string name=\"Passphrase\">.*<\/string>|<string name=\"Passphrase\">$NEW_PASS<\/string>|" "$SAP_XML"
         if [ "$NEW_BAND" = "2.4" ]; then
             sed -i 's|<int name="Band" value="[0-9]*" \/>|<int name="Band" value="1" \/>|' "$SAP_XML"
@@ -580,6 +721,128 @@ EOF
     fi
 }
 
+cmd_direct_modem() {
+    ACTION="${1:-status}"
+    case "$ACTION" in
+        enable|1|on)
+            # 1. Carrier Entitlement & DUN Bypass
+            settings put global tether_dun_required 0 2>/dev/null
+            settings put global tether_dun_apn "" 2>/dev/null
+            settings put global tether_entitlement_check_state 0 2>/dev/null
+            settings put global tether_offload_disabled 1 2>/dev/null
+            setprop net.tethering.noprovisioning true 2>/dev/null
+            setprop persist.sys.tether.noprovisioning true 2>/dev/null
+
+            # 2. Kernel Forwarding & Socket Wire-Speed Optimizations
+            sysctl -w net.ipv4.ip_forward=1 2>/dev/null || true
+            sysctl -w net.ipv4.conf.all.forwarding=1 2>/dev/null || true
+            sysctl -w net.ipv6.conf.all.forwarding=1 2>/dev/null || true
+            sysctl -w net.ipv4.conf.all.rp_filter=0 2>/dev/null || true
+            sysctl -w net.ipv4.conf.default.rp_filter=0 2>/dev/null || true
+            sysctl -w net.ipv4.conf.swlan0.rp_filter=0 2>/dev/null || true
+            sysctl -w net.ipv4.conf.ap0.rp_filter=0 2>/dev/null || true
+            sysctl -w net.ipv4.tcp_slow_start_after_idle=0 2>/dev/null || true
+            sysctl -w net.core.netdev_max_backlog=10000 2>/dev/null || true
+            sysctl -w net.core.somaxconn=4096 2>/dev/null || true
+
+            # 3. TTL Normalization (Prevent hop-count carrier tethering detection)
+            sysctl -w net.ipv4.ip_default_ttl=64 2>/dev/null || true
+            sysctl -w net.ipv6.conf.all.hop_limit=64 2>/dev/null || true
+            iptables -w 2 -t mangle -D POSTROUTING -j TTL --ttl-set 64 2>/dev/null || true
+            iptables -w 2 -t mangle -I POSTROUTING 1 -j TTL --ttl-set 64 2>/dev/null || true
+
+            # 4. TCP MSS PMTU Clamping (Eliminates MTU packet drops on LTE/5G bearers)
+            iptables -w 2 -t mangle -D FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+            iptables -w 2 -t mangle -I FORWARD 1 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+            ip6tables -w 2 -t mangle -D FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+            ip6tables -w 2 -t mangle -I FORWARD 1 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+
+            # 5. Clean DNS Shield (Redirect Hotspot DNS queries to 1.1.1.1 / 8.8.8.8)
+            iptables -w 2 -t nat -D PREROUTING -p udp --dport 53 -j DNAT --to-destination 1.1.1.1:53 2>/dev/null || true
+            iptables -w 2 -t nat -I PREROUTING 1 -p udp --dport 53 -j DNAT --to-destination 1.1.1.1:53 2>/dev/null || true
+            iptables -w 2 -t nat -D PREROUTING -p tcp --dport 53 -j DNAT --to-destination 1.1.1.1:53 2>/dev/null || true
+            iptables -w 2 -t nat -I PREROUTING 1 -p tcp --dport 53 -j DNAT --to-destination 1.1.1.1:53 2>/dev/null || true
+
+            # 6. Wire-Speed Forwarding Chain (Bypasses all Android tetherctrl/quota filters)
+            iptables -w 2 -N PURE_FORWARD 2>/dev/null || iptables -w 2 -F PURE_FORWARD
+            iptables -w 2 -A PURE_FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+            iptables -w 2 -A PURE_FORWARD -i swlan+ -j ACCEPT
+            iptables -w 2 -A PURE_FORWARD -o swlan+ -j ACCEPT
+            iptables -w 2 -A PURE_FORWARD -i ap0 -j ACCEPT
+            iptables -w 2 -A PURE_FORWARD -o ap0 -j ACCEPT
+            iptables -w 2 -A PURE_FORWARD -i rndis+ -j ACCEPT
+            iptables -w 2 -A PURE_FORWARD -o rndis+ -j ACCEPT
+            iptables -w 2 -A PURE_FORWARD -i usb+ -j ACCEPT
+            iptables -w 2 -A PURE_FORWARD -o usb+ -j ACCEPT
+            iptables -w 2 -A PURE_FORWARD -i eth+ -j ACCEPT
+            iptables -w 2 -A PURE_FORWARD -o eth+ -j ACCEPT
+            iptables -w 2 -D FORWARD -j PURE_FORWARD 2>/dev/null || true
+            iptables -w 2 -I FORWARD 1 -j PURE_FORWARD 2>/dev/null || true
+
+            # 7. Direct Cellular Modem NAT Masquerade
+            iptables -w 2 -t nat -N PURE_NAT 2>/dev/null || iptables -w 2 -t nat -F PURE_NAT
+            iptables -w 2 -t nat -A PURE_NAT -o rmnet+ -j MASQUERADE
+            iptables -w 2 -t nat -A PURE_NAT -o v4-rmnet+ -j MASQUERADE
+            iptables -w 2 -t nat -A PURE_NAT -o ccmni+ -j MASQUERADE
+            iptables -w 2 -t nat -A PURE_NAT -o pdp+ -j MASQUERADE
+            iptables -w 2 -t nat -D POSTROUTING -j PURE_NAT 2>/dev/null || true
+            iptables -w 2 -t nat -I POSTROUTING 1 -j PURE_NAT 2>/dev/null || true
+
+            # 8. IPv6 Forwarding Wire-Speed Passthrough
+            ip6tables -w 2 -N PURE_FORWARD_V6 2>/dev/null || ip6tables -w 2 -F PURE_FORWARD_V6
+            ip6tables -w 2 -A PURE_FORWARD_V6 -m state --state ESTABLISHED,RELATED -j ACCEPT
+            ip6tables -w 2 -A PURE_FORWARD_V6 -i swlan+ -j ACCEPT
+            ip6tables -w 2 -A PURE_FORWARD_V6 -o swlan+ -j ACCEPT
+            ip6tables -w 2 -A PURE_FORWARD_V6 -i ap0 -j ACCEPT
+            ip6tables -w 2 -A PURE_FORWARD_V6 -o ap0 -j ACCEPT
+            ip6tables -w 2 -A PURE_FORWARD_V6 -i rndis+ -j ACCEPT
+            ip6tables -w 2 -A PURE_FORWARD_V6 -o rndis+ -j ACCEPT
+            ip6tables -w 2 -D FORWARD -j PURE_FORWARD_V6 2>/dev/null || true
+            ip6tables -w 2 -I FORWARD 1 -j PURE_FORWARD_V6 2>/dev/null || true
+
+            # 9. Dynamic Policy Routing Setup
+            sync_direct_routing
+
+            set_cfg_val DIRECT_MODEM_HOTSPOT 1
+            echo "{\"success\":true,\"enabled\":true,\"message\":\"Clean Direct Modem-to-Hotspot Passthrough & Carrier Bypass ENABLED\"}"
+            ;;
+        disable|0|off)
+            iptables -w 2 -D FORWARD -j PURE_FORWARD 2>/dev/null || true
+            iptables -w 2 -F PURE_FORWARD 2>/dev/null || true
+            iptables -w 2 -X PURE_FORWARD 2>/dev/null || true
+            ip6tables -w 2 -D FORWARD -j PURE_FORWARD_V6 2>/dev/null || true
+            ip6tables -w 2 -F PURE_FORWARD_V6 2>/dev/null || true
+            ip6tables -w 2 -X PURE_FORWARD_V6 2>/dev/null || true
+
+            iptables -w 2 -t nat -D POSTROUTING -j PURE_NAT 2>/dev/null || true
+            iptables -w 2 -t nat -F PURE_NAT 2>/dev/null || true
+            iptables -w 2 -t nat -X PURE_NAT 2>/dev/null || true
+
+            iptables -w 2 -t mangle -D POSTROUTING -j TTL --ttl-set 64 2>/dev/null || true
+            iptables -w 2 -t mangle -D FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+            iptables -w 2 -t nat -D PREROUTING -p udp --dport 53 -j DNAT --to-destination 1.1.1.1:53 2>/dev/null || true
+            iptables -w 2 -t nat -D PREROUTING -p tcp --dport 53 -j DNAT --to-destination 1.1.1.1:53 2>/dev/null || true
+
+            for p in 7000 7001 7002 7003 7004 7005 7010 7011 7012 7013 7014 7015; do
+                ip rule del pref "$p" 2>/dev/null || true
+                ip -6 rule del pref "$p" 2>/dev/null || true
+            done
+
+            set_cfg_val DIRECT_MODEM_HOTSPOT 0
+            echo "{\"success\":true,\"enabled\":false,\"message\":\"Direct Modem-to-Hotspot Passthrough disabled\"}"
+            ;;
+        status|*)
+            DM_CFG=$(get_cfg_val DIRECT_MODEM_HOTSPOT)
+            [ -z "$DM_CFG" ] && DM_CFG="1"
+            DM_ACTIVE=false
+            if iptables -w 2 -L FORWARD -n 2>/dev/null | grep -q "PURE_FORWARD"; then
+                DM_ACTIVE=true
+            fi
+            echo "{\"success\":true,\"enabled\":$([ "$DM_CFG" = "1" ] && echo true || echo false),\"active\":$DM_ACTIVE}"
+            ;;
+    esac
+}
+
 case "$1" in
     status)
         cmd_status
@@ -635,8 +898,11 @@ case "$1" in
     dump_cfg)
         cmd_dump_cfg
         ;;
+    direct_modem)
+        cmd_direct_modem "$2"
+        ;;
     *)
-        echo "Usage: wifi_master {status|set_qam256|set_cam|set_autoperf|set_dbdc|set_nss|set_bw5g|set_country|set_tcp|set_wlan_cfg|set_wifi|set_hotspot|set_hotspot_cfg|block_mac|unblock_mac|apply_profile|revert|dump_cfg}"
+        echo "Usage: wifi_master {status|set_qam256|set_cam|set_autoperf|set_dbdc|set_nss|set_bw5g|set_country|set_tcp|set_wlan_cfg|set_wifi|set_hotspot|set_hotspot_cfg|block_mac|unblock_mac|apply_profile|revert|dump_cfg|direct_modem}"
         exit 1
         ;;
 esac

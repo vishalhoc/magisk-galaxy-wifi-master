@@ -93,6 +93,9 @@ case "$ACTION" in
     dump_cfg)
         sh "$WM" dump_cfg
         ;;
+    direct_modem)
+        sh "$WM" direct_modem "$VAL"
+        ;;
     *)
         echo "{\"success\":false,\"error\":\"Unknown action: $ACTION\"}"
         ;;

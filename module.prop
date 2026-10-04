@@ -1,6 +1,6 @@
 id=galaxy-wifi-master
 name=Galaxy Wi-Fi Master & Web Control Panel
-version=v1.0
-versionCode=100
+version=v1.1
+versionCode=110
 author=hoc
-description=Extreme MT6853/MT6631 Wi-Fi Suite: 5GHz Hotspot 866M Unlock (2x2 MIMO & 160MHz), 256-QAM TurboQAM Enabler, CAM Ultra-Low Latency Gaming Engine, DBDC Concurrency, Buffer Tuning, All-Channel/DFS Unlock, and Glassmorphism Web Panel on port 8095 by hoc.
+description=Extreme MT6853/MT6631 Wi-Fi Suite: Clean Direct Modem-to-Hotspot Wire-Speed Passthrough, Carrier DUN/TTL/MSS Bypass, 5GHz Hotspot 866M Unlock (2x2 MIMO & 160MHz), 256-QAM TurboQAM, CAM Gaming Mode, DBDC, and Glassmorphism Web Panel on port 8095 by hoc.
