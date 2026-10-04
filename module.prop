@@ -3,4 +3,4 @@ name=Galaxy Wi-Fi Master & Web Control Panel
 version=v1.0
 versionCode=100
 author=hoc
-description=Extreme MediaTek MT6853/MT6631 Wi-Fi Suite: 256-QAM (TurboQAM) Enabler, Continuous Access Mode (CAM) Ultra-Low Latency Gaming Engine, DBDC Concurrency, Packet Aggregation Buffer Optimizer, All-Channel & DFS Unlocking, and Full Glassmorphism Web Control Panel on port 8095 by hoc.
+description=Extreme MT6853/MT6631 Wi-Fi Suite: 5GHz Hotspot 866M Unlock (2x2 MIMO & 160MHz), 256-QAM TurboQAM Enabler, CAM Ultra-Low Latency Gaming Engine, DBDC Concurrency, Buffer Tuning, All-Channel/DFS Unlock, and Glassmorphism Web Panel on port 8095 by hoc.

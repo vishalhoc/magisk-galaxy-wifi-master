@@ -54,6 +54,12 @@ case "$ACTION" in
     set_dbdc)
         sh "$WM" set_dbdc "$VAL"
         ;;
+    set_nss)
+        sh "$WM" set_nss "$VAL"
+        ;;
+    set_bw5g)
+        sh "$WM" set_bw5g "$VAL"
+        ;;
     set_country)
         sh "$WM" set_country "$VAL"
         ;;

@@ -15,27 +15,33 @@ Operating System: **OneUI 5.1 / Android 13 (Linux 4.14.186)**
 * **Master Unlock**: Dynamically writes `Probe256QAM 1` directly to `/proc/net/wlan/cfg` at boot, unlocking 256-QAM high-density symbol modulation on both 2.4 GHz and 5 GHz.
 * **Performance Gain**: Boosts peak 2.4 GHz link speeds from **150/300 Mbps to 200/400 Mbps (+33% throughput)** on compatible Wi-Fi routers!
 
-### 2. 🎮 Ultra-Low Latency Continuous Access Mode (CAM) Gaming Engine
+### 2. ⚡ 5GHz Hotspot & Wi-Fi 866.7 Mbps / 1733 Mbps Speed Unlock (2x2 MIMO)
+* **Stock Limitation**: Samsung's stock driver hardcodes `Nss=1` (1 Spatial Stream / 1x1 SISO) and `ApBw=2` (80MHz). Under 802.11ac VHT80 MCS9, this strictly caps peak 5GHz Hotspot and link speeds to **433.3 Mbps**.
+* **Master Unlock**: The MT6631 CONNSYS 2.0 hardware natively supports 2 Spatial Streams (`D:Nss|2`, `D:Ap5gNss|2`) and 160MHz bandwidth (`D:ApBw|3`). By dynamically writing `Nss 2`, `Ap5gNss 2`, `Go5gNss 2`, `ApBw 3`, and `Ap5gBw 3` to `/proc/net/wlan/cfg`, the module activates **2x2 MIMO**:
+  * **80 MHz, 2x2 MIMO**: **866.7 Mbps** (2x speed boost over stock 433 Mbps!)
+  * **160 MHz, 2x2 MIMO**: **1733.3 Mbps** (4x theoretical peak throughput!)
+
+### 3. 🎮 Ultra-Low Latency Continuous Access Mode (CAM) Gaming Engine
 * **The Problem**: Standard 802.11 power-saving modes (PSM) periodically put the Wi-Fi transceiver to sleep between beacon intervals, resulting in 50–150ms latency spikes and jitter during online gaming.
 * **The Solution**: Continuous Access Mode (CAM) locks the MT6631 transceiver into continuous active receive/transmit state via `/proc/net/wlan/setCAM 1`. Eliminates sleep cycles and stabilizes packet delivery to 0–1ms jitter.
 
-### 3. 🌐 Dual Band Dual Concurrent (DBDC) Engine
+### 4. 🌐 Dual Band Dual Concurrent (DBDC) Engine
 * Unlocks hardware-level simultaneous dual-band concurrent operation (`DbdcMode 2` on MT6631), allowing simultaneous connection to a 5 GHz uplink while broadcasting a 2.4 GHz Hotspot (`swlan0` + `wlan0`).
 
-### 4. 🔓 All-Channel & DFS Restrictions Override
+### 5. 🔓 All-Channel & DFS Restrictions Override
 * **The Problem**: Samsung's stock `/vendor/etc/wifi/indoorchannel.info` forces strict DFS radar detection restrictions and disables 5 GHz channels (DFS channels 52–144 and UNII-3 channels 149–165) for SoftAP and ad-hoc networks across several regulatory domains.
 * **The Solution**: Systemless overlay removes indoor-only channel blocks, unlocking all 5GHz channels (36–165) and 2.4GHz channels (1–14) for both Station and Hotspot broadcasting.
 
-### 5. 📦 Packet Aggregation & Network Buffer Tuning
+### 6. 📦 Packet Aggregation & Network Buffer Tuning
 * Configures 8K A-MSDU aggregation (`TxMaxAmsduInAmpduLen 8192`) and queue thresholds (`NetifStartTh 128`, `NetifStopTh 256`) to maximize frame efficiency.
 * Automatically tunes Linux kernel socket buffers to 16MB (`net.core.rmem_max=16777216`, `net.core.wmem_max=16777216`).
 * Switches TCP congestion control to **BBR** (Google Bottleneck Bandwidth and RTT).
 
-### 6. 🌐 Glassmorphism Web Control Panel (Port 8095)
+### 7. 🌐 Glassmorphism Web Control Panel (Port 8095)
 * Built-in lightweight web dashboard running natively on port **`8095`**:
   * **Dashboard**: Live signal gauge (dBm), SSID/BSSID, operating frequency, channel, PHY link speed, IP, gateway, and live traffic stats.
-  * **Feature Accelerators**: One-click toggles for 256-QAM, CAM Gaming Mode, AutoPerf Monitor, DBDC Concurrency, Country Code selector, and TCP Congestion algorithms.
-  * **Hotspot & Tethering**: Change SSID, password, band (2.4 GHz vs 5 GHz), channel, and view connected clients with instant MAC blocking.
+  * **Feature Accelerators**: One-click toggles for 256-QAM, CAM Gaming Mode, 2x2 MIMO 866M Boost, 160MHz Bandwidth, AutoPerf Monitor, DBDC Concurrency, Country Code selector, and TCP Congestion algorithms.
+  * **Hotspot & Tethering**: Change SSID, password, band (2.4 GHz vs 5 GHz), channel, toggle 866 Mbps MIMO boost, and view connected clients with instant MAC blocking.
   * **Live `/proc/net/wlan/cfg` Editor**: Search and tune all 120+ MediaTek driver parameters in real-time.
   * **Quick Profiles**: Instant switches for `[🎮 Gaming Mode]`, `[🚀 Max Throughput]`, `[🔋 Battery Saver]`, and `[↺ Stock Reset]`.
 
@@ -48,6 +54,12 @@ The module provides a command-line interface executable from root shell:
 ```bash
 # View complete JSON telemetry & hardware state
 su -c wifi_master status
+
+# Toggle 2x2 MIMO 866 Mbps Boost (2 = 2x2 MIMO 866M, 1 = 1x1 SISO 433M)
+su -c wifi_master set_nss 2
+
+# Toggle 5GHz Bandwidth (3 = 160 MHz Ultra, 2 = 80 MHz Standard)
+su -c wifi_master set_bw5g 3
 
 # Toggle 256-QAM (TurboQAM)
 su -c wifi_master set_qam256 1

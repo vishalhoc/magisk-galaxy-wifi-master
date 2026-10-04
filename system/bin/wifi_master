@@ -14,6 +14,8 @@ QAM256=1
 CAM=0
 AUTOPERF=1
 DBDC=2
+NSS=2
+BW5G=3
 TCP_CONG=bbr
 COUNTRY=00
 PROFILE=default
@@ -95,15 +97,35 @@ cmd_status() {
     DBDC="0"
     STAVHT="1"
     APVHT="1"
+    NSS_VAL="1"
+    AP5G_NSS_VAL="1"
+    AP_BW_VAL="2"
     if [ -f /proc/net/wlan/cfg ]; then
         QAM256=$(grep "^Probe256QAM|" /proc/net/wlan/cfg 2>/dev/null | cut -d '|' -f 2)
         [ -z "$QAM256" ] && QAM256=$(grep "^D:Probe256QAM|" /proc/net/wlan/cfg 2>/dev/null | cut -d '|' -f 2)
         DBDC=$(grep "^D:DbdcMode|" /proc/net/wlan/cfg 2>/dev/null | cut -d '|' -f 2)
         STAVHT=$(grep "^StaVHT|" /proc/net/wlan/cfg 2>/dev/null | cut -d '|' -f 2)
         APVHT=$(grep "^ApVHT|" /proc/net/wlan/cfg 2>/dev/null | cut -d '|' -f 2)
+        n_out=$(grep "^Nss|" /proc/net/wlan/cfg 2>/dev/null | cut -d '|' -f 2)
+        [ -z "$n_out" ] && n_out=$(grep "^D:Nss|" /proc/net/wlan/cfg 2>/dev/null | cut -d '|' -f 2)
+        [ -n "$n_out" ] && NSS_VAL="$n_out"
+        ap5g_nss=$(grep "^Ap5gNss|" /proc/net/wlan/cfg 2>/dev/null | cut -d '|' -f 2)
+        [ -z "$ap5g_nss" ] && ap5g_nss=$(grep "^D:Ap5gNss|" /proc/net/wlan/cfg 2>/dev/null | cut -d '|' -f 2)
+        [ -n "$ap5g_nss" ] && AP5G_NSS_VAL="$ap5g_nss"
+        ap_bw=$(grep "^ApBw|" /proc/net/wlan/cfg 2>/dev/null | cut -d '|' -f 2)
+        [ -z "$ap_bw" ] && ap_bw=$(grep "^D:ApBw|" /proc/net/wlan/cfg 2>/dev/null | cut -d '|' -f 2)
+        [ -n "$ap_bw" ] && AP_BW_VAL="$ap_bw"
     fi
     [ -z "$QAM256" ] && QAM256="0"
     [ -z "$DBDC" ] && DBDC="0"
+    MAX_5G_PHY=433
+    if [ "$NSS_VAL" = "2" ] || [ "$AP5G_NSS_VAL" = "2" ]; then
+        if [ "$AP_BW_VAL" = "3" ]; then
+            MAX_5G_PHY=1733
+        else
+            MAX_5G_PHY=866
+        fi
+    fi
 
     AUTOPERF="0"
     if grep -q "1: always enable" /proc/net/wlan/autoPerfCfg 2>/dev/null; then
@@ -244,6 +266,10 @@ EOF
     "auto_perf": $AUTOPERF,
     "dbdc_mode": $DBDC,
     "dfs_unlocked": $DFS_UNLOCKED,
+    "nss": $NSS_VAL,
+    "ap_5g_nss": $AP5G_NSS_VAL,
+    "ap_bw": $AP_BW_VAL,
+    "max_5g_phy_mbps": $MAX_5G_PHY,
     "tcp_congestion": "$TCP_CONG",
     "country_code": "$COUNTRY_CODE",
     "active_profile": "$CURRENT_PROFILE"
@@ -302,6 +328,31 @@ cmd_set_dbdc() {
     fi
     set_cfg_val DBDC "$VAL"
     echo "{\"success\":true,\"dbdc\":$VAL,\"message\":\"DBDC Concurrency set to $VAL\"}"
+}
+
+cmd_set_nss() {
+    VAL="${1:-2}"
+    if [ -f /proc/net/wlan/cfg ]; then
+        echo "Nss $VAL" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Ap5gNss $VAL" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Go5gNss $VAL" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Ap2gNss $VAL" > /proc/net/wlan/cfg 2>/dev/null
+    fi
+    set_cfg_val NSS "$VAL"
+    MAX_PHY=$([ "$VAL" = "2" ] && echo 866 || echo 433)
+    echo "{\"success\":true,\"nss\":$VAL,\"max_speed\":$MAX_PHY,\"message\":\"Spatial Streams (MIMO) set to ${VAL}x${VAL} ($([ "$VAL" = "2" ] && echo "866 Mbps Boost" || echo "433 Mbps Standard"))\"}"
+}
+
+cmd_set_bw5g() {
+    VAL="${1:-3}"
+    if [ -f /proc/net/wlan/cfg ]; then
+        echo "ApBw $VAL" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Ap5gBw $VAL" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Sta5gBw $VAL" > /proc/net/wlan/cfg 2>/dev/null
+    fi
+    set_cfg_val BW5G "$VAL"
+    BW_TEXT=$([ "$VAL" = "3" ] && echo "160 MHz Ultra" || echo "80 MHz Standard")
+    echo "{\"success\":true,\"bw\":$VAL,\"bandwidth\":\"$BW_TEXT\",\"message\":\"5GHz Channel Bandwidth Mode set to $BW_TEXT\"}"
 }
 
 cmd_set_country() {
@@ -407,9 +458,11 @@ cmd_apply_profile() {
             cmd_set_cam 1 >/dev/null
             cmd_set_qam256 1 >/dev/null
             cmd_set_autoperf 1 >/dev/null
+            cmd_set_nss 2 >/dev/null
+            cmd_set_bw5g 3 >/dev/null
             cmd_set_tcp bbr >/dev/null
             set_cfg_val PROFILE "gaming"
-            echo "{\"success\":true,\"profile\":\"gaming\",\"message\":\"Gaming Mode Active: Zero-Jitter Continuous Access Mode (CAM) enabled, 256-QAM enabled, TCP BBR active\"}"
+            echo "{\"success\":true,\"profile\":\"gaming\",\"message\":\"Gaming Mode Active: Zero-Jitter Continuous Access Mode (CAM) enabled, 256-QAM enabled, 2x2 MIMO 866 Mbps Boost, TCP BBR active\"}"
             ;;
         max_throughput)
             # Maximum Bandwidth & Speed Profile
@@ -417,28 +470,34 @@ cmd_apply_profile() {
             cmd_set_qam256 1 >/dev/null
             cmd_set_autoperf 1 >/dev/null
             cmd_set_dbdc 2 >/dev/null
+            cmd_set_nss 2 >/dev/null
+            cmd_set_bw5g 3 >/dev/null
             cmd_set_tcp bbr >/dev/null
             # Buffer & aggregation tuning
             echo "TxMaxAmsduInAmpduLen 8192" > /proc/net/wlan/cfg 2>/dev/null
             echo "NetifStopTh 256" > /proc/net/wlan/cfg 2>/dev/null
             echo "NetifStartTh 128" > /proc/net/wlan/cfg 2>/dev/null
             set_cfg_val PROFILE "max_throughput"
-            echo "{\"success\":true,\"profile\":\"max_throughput\",\"message\":\"Max Throughput Active: 256-QAM active, 8K A-MSDU aggregation, DBDC enabled, TCP BBR active\"}"
+            echo "{\"success\":true,\"profile\":\"max_throughput\",\"message\":\"Max Throughput Active: 256-QAM active, 2x2 MIMO 866-1733 Mbps Boost, 160MHz BW, 8K A-MSDU, TCP BBR active\"}"
             ;;
         battery_saver)
             # Standard Power Saving Profile
             cmd_set_cam 0 >/dev/null
             cmd_set_autoperf 0 >/dev/null
+            cmd_set_nss 1 >/dev/null
+            cmd_set_bw5g 2 >/dev/null
             set_cfg_val PROFILE "battery_saver"
-            echo "{\"success\":true,\"profile\":\"battery_saver\",\"message\":\"Battery Saver Active: 802.11 standard power management enabled\"}"
+            echo "{\"success\":true,\"profile\":\"battery_saver\",\"message\":\"Battery Saver Active: 802.11 standard power management enabled, 1x1 SISO\"}"
             ;;
         default|*)
             # Reset to defaults
             cmd_set_cam 0 >/dev/null
             cmd_set_qam256 1 >/dev/null
             cmd_set_autoperf 1 >/dev/null
+            cmd_set_nss 2 >/dev/null
+            cmd_set_bw5g 3 >/dev/null
             set_cfg_val PROFILE "default"
-            echo "{\"success\":true,\"profile\":\"default\",\"message\":\"Default Optimized Profile Active\"}"
+            echo "{\"success\":true,\"profile\":\"default\",\"message\":\"Default Optimized Profile Active (256-QAM + 2x2 MIMO 866 Mbps Boost)\"}"
             ;;
     esac
 }
@@ -488,6 +547,12 @@ case "$1" in
     set_dbdc)
         cmd_set_dbdc "$2"
         ;;
+    set_nss)
+        cmd_set_nss "$2"
+        ;;
+    set_bw5g)
+        cmd_set_bw5g "$2"
+        ;;
     set_country)
         cmd_set_country "$2"
         ;;
@@ -519,7 +584,7 @@ case "$1" in
         cmd_dump_cfg
         ;;
     *)
-        echo "Usage: wifi_master {status|set_qam256|set_cam|set_autoperf|set_dbdc|set_country|set_tcp|set_wlan_cfg|set_wifi|set_hotspot|set_hotspot_cfg|block_mac|unblock_mac|apply_profile|dump_cfg}"
+        echo "Usage: wifi_master {status|set_qam256|set_cam|set_autoperf|set_dbdc|set_nss|set_bw5g|set_country|set_tcp|set_wlan_cfg|set_wifi|set_hotspot|set_hotspot_cfg|block_mac|unblock_mac|apply_profile|dump_cfg}"
         exit 1
         ;;
 esac

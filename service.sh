@@ -35,6 +35,8 @@ QAM256=1
 CAM=0
 AUTOPERF=1
 DBDC=2
+NSS=2
+BW5G=3
 TCP_CONG=bbr
 COUNTRY=00
 PROFILE=default
@@ -63,7 +65,24 @@ if [ -f /proc/net/wlan/cfg ]; then
     [ -z "$DBDC_VAL" ] && DBDC_VAL=2
     echo "DbdcMode $DBDC_VAL" > /proc/net/wlan/cfg 2>/dev/null
 
-    # 5. Buffer & Packet Aggregation Tuning
+    # 5. Spatial Streams (2x2 MIMO 866 Mbps Boost)
+    NSS_VAL=$(grep '^NSS=' "$CFG_FILE" | cut -d '=' -f 2)
+    [ -z "$NSS_VAL" ] && NSS_VAL=2
+    echo "Nss $NSS_VAL" > /proc/net/wlan/cfg 2>/dev/null
+    echo "Ap5gNss $NSS_VAL" > /proc/net/wlan/cfg 2>/dev/null
+    echo "Go5gNss $NSS_VAL" > /proc/net/wlan/cfg 2>/dev/null
+    echo "Ap2gNss $NSS_VAL" > /proc/net/wlan/cfg 2>/dev/null
+    echo "[*] MIMO Spatial Streams set to $NSS_VAL (2x2 MIMO 866 Mbps Boost)" >> "$LOG"
+
+    # 6. 5GHz Channel Bandwidth (160 MHz Ultra Bandwidth)
+    BW5G_VAL=$(grep '^BW5G=' "$CFG_FILE" | cut -d '=' -f 2)
+    [ -z "$BW5G_VAL" ] && BW5G_VAL=3
+    echo "ApBw $BW5G_VAL" > /proc/net/wlan/cfg 2>/dev/null
+    echo "Ap5gBw $BW5G_VAL" > /proc/net/wlan/cfg 2>/dev/null
+    echo "Sta5gBw $BW5G_VAL" > /proc/net/wlan/cfg 2>/dev/null
+    echo "[*] 5GHz Bandwidth mode set to $BW5G_VAL" >> "$LOG"
+
+    # 7. Buffer & Packet Aggregation Tuning
     echo "TxMaxAmsduInAmpduLen 8192" > /proc/net/wlan/cfg 2>/dev/null
     echo "NetifStopTh 256" > /proc/net/wlan/cfg 2>/dev/null
     echo "NetifStartTh 128" > /proc/net/wlan/cfg 2>/dev/null

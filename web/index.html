@@ -134,6 +134,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
     </div>
     <div class="header-badges">
       <span class="badge badge-neon" id="badge-chip">MT6631 E1</span>
+      <span class="badge badge-green" id="badge-mimo">2x2 MIMO (866M)</span>
       <span class="badge badge-green" id="badge-qam">256-QAM</span>
       <span class="badge" id="badge-cam">CAM: OFF</span>
       <button class="refresh-btn" onclick="fetchStatus()">↺ Refresh</button>
@@ -148,7 +149,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
     </button>
     <button class="profile-btn" id="prof-max_throughput" onclick="applyProfile('max_throughput')">
       🚀 Max Throughput
-      <span>256-QAM &bull; 8K A-MSDU</span>
+      <span>256-QAM &bull; 2x2 MIMO 866M</span>
     </button>
     <button class="profile-btn" id="prof-battery_saver" onclick="applyProfile('battery_saver')">
       🔋 Battery Saver
@@ -211,6 +212,8 @@ tr:hover td { background: rgba(255,255,255,0.02); }
         <div class="metric-row"><span class="metric-label">Driver Architecture</span><span class="metric-val">MediaTek Gen4m</span></div>
         <div class="metric-row"><span class="metric-label">Driver Release</span><span class="metric-val" id="hw-drv">MTK_4_1_10</span></div>
         <div class="metric-row"><span class="metric-label">Firmware Patch</span><span class="metric-val" id="hw-fw" style="font-size:11px;">Mouton ASIC</span></div>
+        <div class="metric-row"><span class="metric-label">MIMO Spatial Streams</span><span class="metric-val" id="hw-nss" style="color:#a7f3d0; font-weight:700;">2x2 MIMO</span></div>
+        <div class="metric-row"><span class="metric-label">Max 5GHz PHY Rate</span><span class="metric-val" id="hw-max-phy" style="color:#93c5fd; font-weight:700;">866 Mbps Boost</span></div>
         <div class="metric-row"><span class="metric-label">TCP Congestion</span><span class="metric-val" id="hw-tcp" style="color:#93c5fd;">bbr</span></div>
         <div class="metric-row"><span class="metric-label">DFS Restriction</span><span class="metric-val" id="hw-dfs" style="color:#6ee7b7;">UNLOCKED</span></div>
         <div class="metric-row"><span class="metric-label">Country Code</span><span class="metric-val" id="hw-cc">00 (World)</span></div>
@@ -271,6 +274,30 @@ tr:hover td { background: rgba(255,255,255,0.02); }
           <option value="0">Disabled (0)</option>
           <option value="1">Auto (1)</option>
           <option value="2">Forced (2)</option>
+        </select>
+      </div>
+
+      <!-- 5GHz MIMO Speed Booster (866 Mbps) -->
+      <div class="toggle-wrapper">
+        <div class="toggle-info">
+          <h4>5GHz &amp; Hotspot Speed Booster (2x2 MIMO Spatial Streams)</h4>
+          <p>Unlocks 2 Spatial Streams across Station and SoftAP. Stock Samsung limits Nss=1 (433 Mbps limit). Unlocking Nss=2 doubles peak 5GHz throughput to <b>866.7 Mbps</b>.</p>
+        </div>
+        <select class="form-control" style="width:170px;" id="select-nss" onchange="setNss(this.value)">
+          <option value="2">2x2 MIMO (866M Boost)</option>
+          <option value="1">1x1 SISO (433M Stock)</option>
+        </select>
+      </div>
+
+      <!-- 5GHz Channel Bandwidth Mode -->
+      <div class="toggle-wrapper">
+        <div class="toggle-info">
+          <h4>5GHz Channel Bandwidth Mode (ApBw &amp; Sta5gBw)</h4>
+          <p>Hardware channel bandwidth mode for 5GHz radio. Mode 3 unlocks 160 MHz ultra-wide channel capability (up to 1733 Mbps PHY).</p>
+        </div>
+        <select class="form-control" style="width:170px;" id="select-bw5g" onchange="setBw5g(this.value)">
+          <option value="3">160 MHz (ApBw 3 Ultra)</option>
+          <option value="2">80 MHz (ApBw 2 Standard)</option>
         </select>
       </div>
 
@@ -363,6 +390,31 @@ tr:hover td { background: rgba(255,255,255,0.02); }
               <option value="11">Ch 11 (2462 MHz)</option>
             </select>
           </div>
+        </div>
+
+        <div class="grid-2" style="margin-bottom:0; margin-top:10px;">
+          <div class="form-group">
+            <label class="form-label">Spatial Streams (MIMO Boost)</label>
+            <select class="form-control" id="hotspot-nss" onchange="setNss(this.value)">
+              <option value="2">2x2 MIMO (866 Mbps Boost)</option>
+              <option value="1">1x1 SISO (433 Mbps Stock)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Bandwidth Mode (ApBw)</label>
+            <select class="form-control" id="hotspot-bw" onchange="setBw5g(this.value)">
+              <option value="3">160 MHz Ultra (ApBw 3)</option>
+              <option value="2">80 MHz Standard (ApBw 2)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.3); border-radius:8px; padding:10px 12px; margin-top:12px; display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <span style="font-weight:700; color:#10b981; font-size:13px;">⚡ 5GHz Hotspot Speed Booster:</span>
+            <span style="font-size:12px; color:var(--text-sub); margin-left:6px;">Stock 433 Mbps limit unlocked via MT6631 2x2 MIMO</span>
+          </div>
+          <span class="badge badge-green" id="hotspot-phy-badge">866 Mbps BOOSTED</span>
         </div>
 
         <div style="display:flex; gap:10px; margin-top:14px;">
@@ -536,6 +588,41 @@ async function fetchStatus() {
   document.getElementById("select-tcp").value = f.tcp_congestion || "bbr";
   document.getElementById("hw-cc").innerText = f.country_code || "00";
 
+  // MIMO & 5GHz Speed Telemetry
+  const nss = f.nss || 1;
+  const apBw = f.ap_bw || 2;
+  const maxPhy = f.max_5g_phy_mbps || 433;
+
+  const mimoBadge = document.getElementById("badge-mimo");
+  if (mimoBadge) {
+    mimoBadge.innerText = (nss == 2) ? `2x2 MIMO (${maxPhy}M)` : "1x1 SISO (433M)";
+    mimoBadge.className = (nss == 2) ? "badge badge-green" : "badge";
+  }
+
+  const hwNss = document.getElementById("hw-nss");
+  if (hwNss) hwNss.innerText = (nss == 2) ? "2x2 MIMO (Dual Stream)" : "1x1 SISO (Single Stream)";
+
+  const hwMaxPhy = document.getElementById("hw-max-phy");
+  if (hwMaxPhy) hwMaxPhy.innerText = `${maxPhy} Mbps (${(nss == 2) ? "Boosted" : "Stock"})`;
+
+  const selNss = document.getElementById("select-nss");
+  if (selNss) selNss.value = nss;
+
+  const selBw5g = document.getElementById("select-bw5g");
+  if (selBw5g) selBw5g.value = apBw;
+
+  const hsNss = document.getElementById("hotspot-nss");
+  if (hsNss) hsNss.value = nss;
+
+  const hsBw = document.getElementById("hotspot-bw");
+  if (hsBw) hsBw.value = apBw;
+
+  const hsPhyBadge = document.getElementById("hotspot-phy-badge");
+  if (hsPhyBadge) {
+    hsPhyBadge.innerText = `${maxPhy} Mbps ${nss == 2 ? "BOOSTED" : "STOCK"}`;
+    hsPhyBadge.className = (nss == 2) ? "badge badge-green" : "badge badge-amber";
+  }
+
   // Profile Buttons
   document.querySelectorAll(".profile-btn").forEach(b => b.classList.remove("active"));
   const profEl = document.getElementById("prof-" + (f.active_profile || "default"));
@@ -594,6 +681,20 @@ async function setQam(enabled) {
 async function setCam(enabled) {
   const res = await api("set_cam", { val: enabled ? 1 : 0 });
   showToast(res ? res.message : "CAM mode updated");
+  fetchStatus();
+}
+
+async function setNss(val) {
+  showToast(`Setting Spatial Streams (MIMO) = ${val}x${val}...`);
+  const res = await api("set_nss", { val });
+  showToast(res ? res.message : "MIMO settings updated");
+  fetchStatus();
+}
+
+async function setBw5g(val) {
+  showToast(`Setting 5GHz Channel Bandwidth mode = ${val}...`);
+  const res = await api("set_bw5g", { val });
+  showToast(res ? res.message : "Bandwidth settings updated");
   fetchStatus();
 }
 
