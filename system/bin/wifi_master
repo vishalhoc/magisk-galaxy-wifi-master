@@ -393,7 +393,7 @@ EOF
 }
 
 cmd_set_bw5g() {
-    VAL="${1:-3}"
+    VAL="${1:-2}"
     if [ -f /proc/net/wlan/cfg ]; then
         echo "ApBw $VAL" > /proc/net/wlan/cfg 2>/dev/null
         echo "Ap5gBw $VAL" > /proc/net/wlan/cfg 2>/dev/null

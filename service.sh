@@ -30,7 +30,7 @@ CAM=0
 AUTOPERF=1
 DBDC=2
 NSS=2
-BW5G=3
+BW5G=2
 TCP_CONG=bbr
 COUNTRY=00
 PROFILE=default
@@ -44,7 +44,7 @@ apply_wifi_settings() {
 
     [ -z "$QAM256" ] && QAM256=1
     [ -z "$NSS" ] && NSS=2
-    [ -z "$BW5G" ] && BW5G=3
+    [ -z "$BW5G" ] && BW5G=2
     [ -z "$DBDC" ] && DBDC=2
     [ -z "$CAM" ] && CAM=0
     [ -z "$AUTOPERF" ] && AUTOPERF=1
