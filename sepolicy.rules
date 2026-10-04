@@ -3,3 +3,6 @@ allow priv_app proc_net file { read write getattr open };
 allow shell proc_net file { read write getattr open };
 allow system_server proc_net file { read write getattr open };
 allow magisk proc_net file { read write getattr open };
+allow hal_wifi_hostapd_default vendor_file_type file { execute execute_no_trans read open getattr };
+allow hal_wifi_hostapd_default vendor_configs_file file { read open getattr };
+allow hal_wifi_supplicant_default vendor_file_type file { execute execute_no_trans read open getattr };

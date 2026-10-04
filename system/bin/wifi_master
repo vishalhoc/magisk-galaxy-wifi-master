@@ -332,15 +332,64 @@ cmd_set_dbdc() {
 
 cmd_set_nss() {
     VAL="${1:-2}"
+    if [ -f /proc/net/wlan/driver ]; then
+        echo "SET_NSS $VAL" > /proc/net/wlan/driver 2>/dev/null
+    fi
     if [ -f /proc/net/wlan/cfg ]; then
         echo "Nss $VAL" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Ap6gNss $VAL" > /proc/net/wlan/cfg 2>/dev/null
         echo "Ap5gNss $VAL" > /proc/net/wlan/cfg 2>/dev/null
-        echo "Go5gNss $VAL" > /proc/net/wlan/cfg 2>/dev/null
         echo "Ap2gNss $VAL" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Go6gNss $VAL" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Go5gNss $VAL" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Go2gNss $VAL" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Sta1Nss $VAL" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Sta5gNss $VAL" > /proc/net/wlan/cfg 2>/dev/null
     fi
     set_cfg_val NSS "$VAL"
     MAX_PHY=$([ "$VAL" = "2" ] && echo 866 || echo 433)
     echo "{\"success\":true,\"nss\":$VAL,\"max_speed\":$MAX_PHY,\"message\":\"Spatial Streams (MIMO) set to ${VAL}x${VAL} ($([ "$VAL" = "2" ] && echo "866 Mbps Boost" || echo "433 Mbps Standard"))\"}"
+}
+
+cmd_revert() {
+    # Revert all settings to stock Samsung / MediaTek factory defaults
+    if [ -f /proc/net/wlan/driver ]; then
+        echo "SET_NSS 1" > /proc/net/wlan/driver 2>/dev/null
+        echo "SET_PWR_CTRL 1" > /proc/net/wlan/driver 2>/dev/null
+    fi
+    if [ -f /proc/net/wlan/cfg ]; then
+        echo "Probe256QAM 0" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Nss 1" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Ap6gNss 1" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Ap5gNss 1" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Ap2gNss 1" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Go6gNss 1" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Go5gNss 1" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Go2gNss 1" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Sta1Nss 1" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Sta5gNss 1" > /proc/net/wlan/cfg 2>/dev/null
+        echo "DbdcMode 0" > /proc/net/wlan/cfg 2>/dev/null
+        echo "ApBw 2" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Ap5gBw 2" > /proc/net/wlan/cfg 2>/dev/null
+        echo "SapOverwriteAcsChnlBw 0" > /proc/net/wlan/cfg 2>/dev/null
+    fi
+    if [ -f /proc/net/wlan/autoPerfCfg ]; then
+        echo "ForceEnable:0" > /proc/net/wlan/autoPerfCfg 2>/dev/null
+    fi
+    echo "cubic" > /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null
+
+    cat <<EOF > "$CFG_FILE"
+QAM256=0
+CAM=0
+AUTOPERF=0
+DBDC=0
+NSS=1
+BW5G=2
+TCP_CONG=cubic
+COUNTRY=00
+PROFILE=stock
+EOF
+    echo "{\"success\":true,\"message\":\"All Wi-Fi settings successfully reverted to stock factory defaults (1x1 SISO 433Mbps, 256-QAM off, standard power save)\"}"
 }
 
 cmd_set_bw5g() {
@@ -580,11 +629,14 @@ case "$1" in
     apply_profile)
         cmd_apply_profile "$2"
         ;;
+    revert)
+        cmd_revert
+        ;;
     dump_cfg)
         cmd_dump_cfg
         ;;
     *)
-        echo "Usage: wifi_master {status|set_qam256|set_cam|set_autoperf|set_dbdc|set_nss|set_bw5g|set_country|set_tcp|set_wlan_cfg|set_wifi|set_hotspot|set_hotspot_cfg|block_mac|unblock_mac|apply_profile|dump_cfg}"
+        echo "Usage: wifi_master {status|set_qam256|set_cam|set_autoperf|set_dbdc|set_nss|set_bw5g|set_country|set_tcp|set_wlan_cfg|set_wifi|set_hotspot|set_hotspot_cfg|block_mac|unblock_mac|apply_profile|revert|dump_cfg}"
         exit 1
         ;;
 esac

@@ -1,6 +1,6 @@
 #!/system/bin/sh
 # ================================================================
-# Galaxy Wi-Fi Master Late Boot Service & Web Daemon
+# Galaxy Wi-Fi Master Late Boot Service & Continuous Guardian
 # Author: hoc
 # ================================================================
 MODDIR=${0%/*}
@@ -8,7 +8,7 @@ LOG=/data/local/tmp/galaxy_wifi_master.log
 
 echo "[$(date)] Galaxy Wi-Fi Master Service starting" > "$LOG"
 
-# Wait for boot completion
+# Wait for Android boot completion
 until [ "$(getprop sys.boot_completed)" = "1" ]; do
     sleep 2
 done
@@ -21,13 +21,7 @@ chmod 755 "$MODDIR/action.sh" 2>/dev/null
 cp "$MODDIR/system/bin/wifi_master" /data/adb/wifi_master 2>/dev/null
 chmod 755 /data/adb/wifi_master 2>/dev/null
 
-# Wait for wlan driver procfs to initialize
-WAIT_CNT=0
-while [ ! -f /proc/net/wlan/cfg ] && [ $WAIT_CNT -lt 15 ]; do
-    sleep 2
-    WAIT_CNT=$((WAIT_CNT + 1))
-done
-
+# Default configuration file
 CFG_FILE="/data/adb/galaxy_wifi_master.cfg"
 if [ ! -f "$CFG_FILE" ]; then
     cat <<EOF > "$CFG_FILE"
@@ -43,72 +37,119 @@ PROFILE=default
 EOF
 fi
 
-# Apply Hardware Accels & Wi-Fi Tunings
-if [ -f /proc/net/wlan/cfg ]; then
-    # 1. 256-QAM (TurboQAM) Modulation
-    QAM_VAL=$(grep '^QAM256=' "$CFG_FILE" | cut -d '=' -f 2)
-    [ -z "$QAM_VAL" ] && QAM_VAL=1
-    echo "Probe256QAM $QAM_VAL" > /proc/net/wlan/cfg 2>/dev/null
-    echo "[*] Probe256QAM set to $QAM_VAL" >> "$LOG"
+# Function to apply all settings
+apply_wifi_settings() {
+    [ ! -f "$CFG_FILE" ] && return
+    . "$CFG_FILE" 2>/dev/null
 
-    # 2. Continuous Access Mode (CAM)
-    CAM_VAL=$(grep '^CAM=' "$CFG_FILE" | cut -d '=' -f 2)
-    [ "$CAM_VAL" = "1" ] && echo 1 > /proc/net/wlan/setCAM 2>/dev/null
+    [ -z "$QAM256" ] && QAM256=1
+    [ -z "$NSS" ] && NSS=2
+    [ -z "$BW5G" ] && BW5G=3
+    [ -z "$DBDC" ] && DBDC=2
+    [ -z "$CAM" ] && CAM=0
+    [ -z "$AUTOPERF" ] && AUTOPERF=1
+    [ -z "$TCP_CONG" ] && TCP_CONG=bbr
 
-    # 3. Auto Performance Monitor
-    AUTO_VAL=$(grep '^AUTOPERF=' "$CFG_FILE" | cut -d '=' -f 2)
-    [ -z "$AUTO_VAL" ] && AUTO_VAL=1
-    echo "ForceEnable:$AUTO_VAL" > /proc/net/wlan/autoPerfCfg 2>/dev/null
+    if [ -f /proc/net/wlan/driver ]; then
+        echo "SET_NSS $NSS" > /proc/net/wlan/driver 2>/dev/null
+        echo "SET_AMPDU_TX 1" > /proc/net/wlan/driver 2>/dev/null
+        echo "SET_AMPDU_RX 1" > /proc/net/wlan/driver 2>/dev/null
+        echo "SET_AMSDU_TX 1" > /proc/net/wlan/driver 2>/dev/null
+        echo "SET_AMSDU_RX 1" > /proc/net/wlan/driver 2>/dev/null
+        echo "SET_BF 1" > /proc/net/wlan/driver 2>/dev/null
+        echo "SET_QOS 1" > /proc/net/wlan/driver 2>/dev/null
+        if [ "$CAM" = "1" ]; then
+            echo "SET_PWR_CTRL 0" > /proc/net/wlan/driver 2>/dev/null
+        fi
+    fi
 
-    # 4. DBDC Mode
-    DBDC_VAL=$(grep '^DBDC=' "$CFG_FILE" | cut -d '=' -f 2)
-    [ -z "$DBDC_VAL" ] && DBDC_VAL=2
-    echo "DbdcMode $DBDC_VAL" > /proc/net/wlan/cfg 2>/dev/null
+    if [ -f /proc/net/wlan/cfg ]; then
+        echo "Probe256QAM $QAM256" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Nss $NSS" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Ap6gNss $NSS" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Ap5gNss $NSS" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Ap2gNss $NSS" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Go6gNss $NSS" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Go5gNss $NSS" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Go2gNss $NSS" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Sta1Nss $NSS" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Sta5gNss $NSS" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Sta2gNss $NSS" > /proc/net/wlan/cfg 2>/dev/null
+        echo "DbdcMode $DBDC" > /proc/net/wlan/cfg 2>/dev/null
+        echo "ApBw $BW5G" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Ap5gBw 2" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Sta5gBw 2" > /proc/net/wlan/cfg 2>/dev/null
+        echo "SapOverwriteAcsChnlBw 1" > /proc/net/wlan/cfg 2>/dev/null
+        echo "TxMaxAmsduInAmpduLen 8192" > /proc/net/wlan/cfg 2>/dev/null
+        echo "NetifStopTh 256" > /proc/net/wlan/cfg 2>/dev/null
+        echo "NetifStartTh 128" > /proc/net/wlan/cfg 2>/dev/null
+    fi
 
-    # 5. Spatial Streams (2x2 MIMO 866 Mbps Boost)
-    NSS_VAL=$(grep '^NSS=' "$CFG_FILE" | cut -d '=' -f 2)
-    [ -z "$NSS_VAL" ] && NSS_VAL=2
-    echo "Nss $NSS_VAL" > /proc/net/wlan/cfg 2>/dev/null
-    echo "Ap5gNss $NSS_VAL" > /proc/net/wlan/cfg 2>/dev/null
-    echo "Go5gNss $NSS_VAL" > /proc/net/wlan/cfg 2>/dev/null
-    echo "Ap2gNss $NSS_VAL" > /proc/net/wlan/cfg 2>/dev/null
-    echo "[*] MIMO Spatial Streams set to $NSS_VAL (2x2 MIMO 866 Mbps Boost)" >> "$LOG"
+    if [ -f /proc/net/wlan/setCAM ]; then
+        [ "$CAM" = "1" ] && echo 1 > /proc/net/wlan/setCAM 2>/dev/null
+    fi
 
-    # 6. 5GHz Channel Bandwidth (160 MHz Ultra Bandwidth)
-    BW5G_VAL=$(grep '^BW5G=' "$CFG_FILE" | cut -d '=' -f 2)
-    [ -z "$BW5G_VAL" ] && BW5G_VAL=3
-    echo "ApBw $BW5G_VAL" > /proc/net/wlan/cfg 2>/dev/null
-    echo "Ap5gBw $BW5G_VAL" > /proc/net/wlan/cfg 2>/dev/null
-    echo "Sta5gBw $BW5G_VAL" > /proc/net/wlan/cfg 2>/dev/null
-    echo "[*] 5GHz Bandwidth mode set to $BW5G_VAL" >> "$LOG"
+    if [ -f /proc/net/wlan/autoPerfCfg ]; then
+        echo "ForceEnable:$AUTOPERF" > /proc/net/wlan/autoPerfCfg 2>/dev/null
+    fi
 
-    # 7. Buffer & Packet Aggregation Tuning
-    echo "TxMaxAmsduInAmpduLen 8192" > /proc/net/wlan/cfg 2>/dev/null
-    echo "NetifStopTh 256" > /proc/net/wlan/cfg 2>/dev/null
-    echo "NetifStartTh 128" > /proc/net/wlan/cfg 2>/dev/null
-fi
+    echo "$TCP_CONG" > /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null
 
-# Apply TCP Congestion
-TCP_VAL=$(grep '^TCP_CONG=' "$CFG_FILE" | cut -d '=' -f 2)
-[ -z "$TCP_VAL" ] && TCP_VAL=bbr
-echo "$TCP_VAL" > /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null
+    # Also ensure vendor/firmware/wifi.cfg has persistent settings
+    if [ -f /vendor/firmware/wifi.cfg ]; then
+        grep -q "Nss 2" /vendor/firmware/wifi.cfg 2>/dev/null || {
+            mount -o remount,rw /vendor 2>/dev/null
+            mount -o remount,rw / 2>/dev/null
+        }
+    fi
+}
 
-# Kill any existing or stale web daemon on port 8095
-pkill -9 -f "8095" 2>/dev/null
-sleep 1
+# Apply initial boot settings
+apply_wifi_settings
+echo "[*] Initial settings applied" >> "$LOG"
 
 # Start Busybox HTTPD Web Server on port 8095
-BUSYBOX="/data/adb/magisk/busybox"
-if [ ! -x "$BUSYBOX" ]; then
-    BUSYBOX="/system/bin/busybox"
-fi
+start_web_daemon() {
+    if ! pgrep -f "httpd.*8095" >/dev/null 2>&1; then
+        pkill -9 -f "8095" 2>/dev/null
+        sleep 1
+        BUSYBOX="/data/adb/magisk/busybox"
+        [ ! -x "$BUSYBOX" ] && BUSYBOX="/system/bin/busybox"
+        if [ -x "$BUSYBOX" ]; then
+            "$BUSYBOX" httpd -p 0.0.0.0:8095 -h "$MODDIR/web" -c "$MODDIR/web/httpd.conf"
+            echo "[*] Web UI started on http://127.0.0.1:8095" >> "$LOG"
+        fi
+    fi
+}
 
-if [ -x "$BUSYBOX" ]; then
-    "$BUSYBOX" httpd -p 0.0.0.0:8095 -h "$MODDIR/web" -c "$MODDIR/web/httpd.conf"
-    echo "[*] Galaxy Wi-Fi Master Web UI started on http://127.0.0.1:8095" >> "$LOG"
-else
-    echo "[-] Error: Busybox binary not found" >> "$LOG"
-fi
+start_web_daemon
 
-echo "[$(date)] Galaxy Wi-Fi Master Service initialized successfully" >> "$LOG"
+# Background Persistent Guardian Loop (runs detached)
+(
+    while true; do
+        sleep 6
+
+        # 1. Keep Web UI alive
+        start_web_daemon
+
+        # 2. Check and re-enforce driver settings against reversion
+        if [ -f /proc/net/wlan/cfg ]; then
+            # Verify if Probe256QAM or Nss reverted
+            if ! grep -q "D:Probe256QAM|1" /proc/net/wlan/cfg 2>/dev/null || \
+               ! grep -q "D:Nss|2" /proc/net/wlan/cfg 2>/dev/null; then
+                apply_wifi_settings
+            fi
+        fi
+
+        # 3. Check if hostapd_swlan0.conf is running with op_class=126 and patch if needed
+        CONF="/data/vendor/wifi/hostapd/hostapd_swlan0.conf"
+        if [ -f "$CONF" ]; then
+            if grep -q "op_class=126" "$CONF" 2>/dev/null; then
+                sed -i 's/op_class=126/op_class=128/g' "$CONF" 2>/dev/null
+            fi
+        fi
+    done
+) &
+
+echo "[$(date)] Galaxy Wi-Fi Master Service & Guardian running in background" >> "$LOG"
 exit 0

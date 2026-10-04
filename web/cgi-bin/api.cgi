@@ -87,6 +87,9 @@ case "$ACTION" in
     apply_profile)
         sh "$WM" apply_profile "$VAL"
         ;;
+    revert)
+        sh "$WM" revert
+        ;;
     dump_cfg)
         sh "$WM" dump_cfg
         ;;
