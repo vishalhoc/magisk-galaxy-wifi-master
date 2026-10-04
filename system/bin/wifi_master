@@ -1,0 +1,527 @@
+#!/system/bin/sh
+# ================================================================
+# Galaxy Wi-Fi Master & Telephony Engine v1.0
+# Device: Samsung Galaxy M32 5G (SM-M326B / MT6853 Dimensity 720)
+# Radio Chip: MediaTek MT6631 / CONNSYS 2.0 (Mouton ASIC)
+# Author: hoc
+# ================================================================
+
+CFG_FILE="/data/adb/galaxy_wifi_master.cfg"
+
+ensure_cfg() {
+    [ -f "$CFG_FILE" ] || cat <<EOF > "$CFG_FILE"
+QAM256=1
+CAM=0
+AUTOPERF=1
+DBDC=2
+TCP_CONG=bbr
+COUNTRY=00
+PROFILE=default
+EOF
+}
+
+get_cfg_val() {
+    ensure_cfg
+    grep "^$1=" "$CFG_FILE" 2>/dev/null | cut -d '=' -f 2- | tr -d '\r\n'
+}
+
+set_cfg_val() {
+    ensure_cfg
+    if grep -q "^$1=" "$CFG_FILE" 2>/dev/null; then
+        sed -i "s|^$1=.*|$1=$2|" "$CFG_FILE"
+    else
+        echo "$1=$2" >> "$CFG_FILE"
+    fi
+}
+
+cmd_status() {
+    ensure_cfg
+
+    # 1. Interface wlan0
+    WLAN_STATE="DOWN"
+    WLAN_IP=""
+    WLAN_MAC="10:ec:81:e1:70:b0"
+    IP_OUT=$(ip -4 addr show wlan0 2>/dev/null)
+    if [ -n "$IP_OUT" ]; then
+        WLAN_STATE=$(echo "$IP_OUT" | grep -o 'state [A-Z]*' | awk '{print $2}')
+        [ -z "$WLAN_STATE" ] && WLAN_STATE="UP"
+        WLAN_IP=$(echo "$IP_OUT" | grep 'inet ' | awk '{print $2}' | cut -d '/' -f 1)
+    fi
+    MAC_OUT=$(cat /sys/class/net/wlan0/address 2>/dev/null)
+    [ -n "$MAC_OUT" ] && WLAN_MAC="$MAC_OUT"
+
+    # Gateway & DNS
+    GW=$(ip route show dev wlan0 2>/dev/null | grep 'default via' | awk '{print $3}' | head -n 1)
+    DNS1=$(getprop net.dns1)
+    DNS2=$(getprop net.dns2)
+
+    # 2. Wi-Fi Connection Telemetry
+    SSID=""
+    BSSID=""
+    RSSI="-127"
+    FREQ="-1"
+    SPEED="-1"
+    WIFI_STD="0"
+    DUMP_WIFI=$(dumpsys wifi 2>/dev/null)
+    INFO_LINE=$(echo "$DUMP_WIFI" | grep 'mWifiInfo' | head -n 1)
+    if [ -n "$INFO_LINE" ]; then
+        SSID=$(echo "$INFO_LINE" | sed -n 's/.*SSID: \([^,]*\),.*/\1/p' | sed 's/^<unknown ssid>$//; s/^"//; s/"$//')
+        BSSID=$(echo "$INFO_LINE" | sed -n 's/.*BSSID: \([^,]*\),.*/\1/p' | sed 's/^<none>$//')
+        RSSI=$(echo "$INFO_LINE" | sed -n 's/.*RSSI: \([^,]*\),.*/\1/p')
+        FREQ=$(echo "$INFO_LINE" | sed -n 's/.*Frequency: \([0-9]*\)MHz.*/\1/p')
+        SPEED=$(echo "$INFO_LINE" | sed -n 's/.*Link speed: \([0-9]*\)Mbps.*/\1/p')
+        WIFI_STD=$(echo "$INFO_LINE" | sed -n 's/.*Wi-Fi standard: \([0-9]*\),.*/\1/p')
+    fi
+    [ "$SSID" = "<none>" ] && SSID=""
+    SSID=$(echo "$SSID" | tr -d '"')
+    [ -z "$RSSI" ] && RSSI="-127"
+    [ -z "$FREQ" ] && FREQ="-1"
+    [ -z "$SPEED" ] && SPEED="-1"
+
+    # Calculate channel from frequency
+    CHANNEL="0"
+    BAND="2.4 GHz"
+    if [ "$FREQ" -ge 2412 ] && [ "$FREQ" -le 2484 ]; then
+        CHANNEL=$(( (FREQ - 2407) / 5 ))
+        [ "$FREQ" -eq 2484 ] && CHANNEL=14
+        BAND="2.4 GHz"
+    elif [ "$FREQ" -ge 5170 ] && [ "$FREQ" -le 5825 ]; then
+        CHANNEL=$(( (FREQ - 5000) / 5 ))
+        BAND="5 GHz (VHT80)"
+    fi
+
+    # 3. Hardware & Driver Parameters
+    QAM256="0"
+    DBDC="0"
+    STAVHT="1"
+    APVHT="1"
+    if [ -f /proc/net/wlan/cfg ]; then
+        QAM256=$(grep "^Probe256QAM|" /proc/net/wlan/cfg 2>/dev/null | cut -d '|' -f 2)
+        [ -z "$QAM256" ] && QAM256=$(grep "^D:Probe256QAM|" /proc/net/wlan/cfg 2>/dev/null | cut -d '|' -f 2)
+        DBDC=$(grep "^D:DbdcMode|" /proc/net/wlan/cfg 2>/dev/null | cut -d '|' -f 2)
+        STAVHT=$(grep "^StaVHT|" /proc/net/wlan/cfg 2>/dev/null | cut -d '|' -f 2)
+        APVHT=$(grep "^ApVHT|" /proc/net/wlan/cfg 2>/dev/null | cut -d '|' -f 2)
+    fi
+    [ -z "$QAM256" ] && QAM256="0"
+    [ -z "$DBDC" ] && DBDC="0"
+
+    AUTOPERF="0"
+    if grep -q "1: always enable" /proc/net/wlan/autoPerfCfg 2>/dev/null; then
+        AUTOPERF=$(get_cfg_val AUTOPERF)
+        [ -z "$AUTOPERF" ] && AUTOPERF="1"
+    fi
+
+    CAM_VAL=$(get_cfg_val CAM)
+    [ -z "$CAM_VAL" ] && CAM_VAL="0"
+
+    TCP_CONG=$(cat /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null)
+    [ -z "$TCP_CONG" ] && TCP_CONG="bbr"
+
+    COUNTRY_CODE="00"
+    C_OUT=$(cat /proc/net/wlan/country 2>/dev/null | grep 'Current Country Code' | awk '{print $4}')
+    [ -n "$C_OUT" ] && COUNTRY_CODE="$C_OUT"
+
+    # 4. Hotspot (SoftAP) Telemetry
+    SAP_ACTIVE=false
+    SAP_IFACE="swlan0"
+    if ip link show swlan0 2>/dev/null | grep -q "state UP"; then
+        SAP_ACTIVE=true
+    elif ip link show ap0 2>/dev/null | grep -q "state UP"; then
+        SAP_ACTIVE=true
+        SAP_IFACE="ap0"
+    fi
+
+    # Read SoftAP Config
+    SAP_XML="/data/misc/apexdata/com.android.wifi/WifiConfigStoreSoftAp.xml"
+    SAP_SSID="Galaxy M32 5G"
+    SAP_PASS="1234567890"
+    SAP_BAND="5 GHz"
+    SAP_CHANNEL="149"
+    if [ -f "$SAP_XML" ]; then
+        s_ssid=$(sed -n 's/.*<string name="WifiSsid">&quot;\(.*\)&quot;<\/string>.*/\1/p' "$SAP_XML" | head -n 1)
+        [ -n "$s_ssid" ] && SAP_SSID="$s_ssid"
+        s_pass=$(sed -n 's/.*<string name="Passphrase">\(.*\)<\/string>.*/\1/p' "$SAP_XML" | head -n 1)
+        [ -n "$s_pass" ] && SAP_PASS="$s_pass"
+        s_band=$(sed -n 's/.*<int name="Band" value="\([0-9]*\)" \/>.*/\1/p' "$SAP_XML" | head -n 1)
+        if [ "$s_band" = "1" ]; then
+            SAP_BAND="2.4 GHz"
+        else
+            SAP_BAND="5 GHz"
+        fi
+        s_chan=$(sed -n 's/.*<int name="Channel" value="\([0-9]*\)" \/>.*/\1/p' "$SAP_XML" | head -n 1)
+        [ -n "$s_chan" ] && SAP_CHANNEL="$s_chan"
+    fi
+
+    # SoftAP Connected Clients
+    CLIENTS_JSON="[]"
+    NEIGH_OUT=$(ip neigh show dev "$SAP_IFACE" 2>/dev/null | grep -E 'REACHABLE|DELAY|STALE')
+    if [ -n "$NEIGH_OUT" ]; then
+        CLIENTS_JSON="["
+        FIRST=1
+        while IFS= read -r line; do
+            c_ip=$(echo "$line" | awk '{print $1}')
+            c_mac=$(echo "$line" | awk '{print $5}')
+            if [ -n "$c_ip" ] && [ -n "$c_mac" ]; then
+                [ $FIRST -eq 0 ] && CLIENTS_JSON="$CLIENTS_JSON,"
+                CLIENTS_JSON="$CLIENTS_JSON{\"ip\":\"$c_ip\",\"mac\":\"$c_mac\"}"
+                FIRST=0
+            fi
+        done <<EOF
+$NEIGH_OUT
+EOF
+        CLIENTS_JSON="$CLIENTS_JSON]"
+    fi
+
+    # Blocked MACs from iptables
+    BLOCKED_JSON="[]"
+    DROP_RULES=$(iptables -S FORWARD 2>/dev/null | grep -- '--mac-source')
+    if [ -n "$DROP_RULES" ]; then
+        BLOCKED_JSON="["
+        FIRST=1
+        while IFS= read -r r; do
+            b_mac=$(echo "$r" | sed -n 's/.*--mac-source \([0-9a-fA-F:]*\).*/\1/p')
+            if [ -n "$b_mac" ]; then
+                [ $FIRST -eq 0 ] && BLOCKED_JSON="$BLOCKED_JSON,"
+                BLOCKED_JSON="$BLOCKED_JSON\"$b_mac\""
+                FIRST=0
+            fi
+        done <<EOF
+$DROP_RULES
+EOF
+        BLOCKED_JSON="$BLOCKED_JSON]"
+    fi
+
+    # DFS & Channel Unlock Check
+    DFS_UNLOCKED=true
+    if [ -f /vendor/etc/wifi/indoorchannel.info ]; then
+        LINES=$(wc -l < /vendor/etc/wifi/indoorchannel.info 2>/dev/null)
+        [ "$LINES" -gt 5 ] && DFS_UNLOCKED=false
+    fi
+
+    # Network Stats for wlan0
+    RX_BYTES=0
+    TX_BYTES=0
+    if [ -f /proc/net/dev ]; then
+        DEV_LINE=$(grep 'wlan0:' /proc/net/dev 2>/dev/null)
+        if [ -n "$DEV_LINE" ]; then
+            RX_BYTES=$(echo "$DEV_LINE" | awk '{print $2}')
+            TX_BYTES=$(echo "$DEV_LINE" | awk '{print $10}')
+        fi
+    fi
+
+    DRIVER_VER=$(getprop vendor.wlan.driver.version | tr -d '"')
+    FW_VER=$(getprop vendor.wlan.firmware.version | tr -d '"')
+    CHIP_ID="MT6631 (0x6631) CONNSYS 2.0"
+    CURRENT_PROFILE=$(get_cfg_val PROFILE)
+    [ -z "$CURRENT_PROFILE" ] && CURRENT_PROFILE="default"
+
+    # Emit JSON
+    cat <<EOF
+{
+  "success": true,
+  "telemetry": {
+    "interface": "wlan0",
+    "state": "$WLAN_STATE",
+    "ip": "$WLAN_IP",
+    "mac": "$WLAN_MAC",
+    "gateway": "$GW",
+    "dns1": "$DNS1",
+    "dns2": "$DNS2",
+    "ssid": "$SSID",
+    "bssid": "$BSSID",
+    "rssi": $RSSI,
+    "frequency": $FREQ,
+    "channel": $CHANNEL,
+    "band": "$BAND",
+    "link_speed_mbps": $SPEED,
+    "wifi_standard": "$WIFI_STD",
+    "rx_bytes": $RX_BYTES,
+    "tx_bytes": $TX_BYTES
+  },
+  "features": {
+    "qam256": $QAM256,
+    "cam_mode": $CAM_VAL,
+    "auto_perf": $AUTOPERF,
+    "dbdc_mode": $DBDC,
+    "dfs_unlocked": $DFS_UNLOCKED,
+    "tcp_congestion": "$TCP_CONG",
+    "country_code": "$COUNTRY_CODE",
+    "active_profile": "$CURRENT_PROFILE"
+  },
+  "hotspot": {
+    "active": $SAP_ACTIVE,
+    "interface": "$SAP_IFACE",
+    "ssid": "$SAP_SSID",
+    "passphrase": "$SAP_PASS",
+    "band": "$SAP_BAND",
+    "channel": "$SAP_CHANNEL",
+    "clients": $CLIENTS_JSON,
+    "blocked_macs": $BLOCKED_JSON
+  },
+  "hardware": {
+    "chip": "$CHIP_ID",
+    "soc": "MediaTek MT6853 Dimensity 720",
+    "driver_version": "$DRIVER_VER",
+    "firmware_version": "$FW_VER"
+  }
+}
+EOF
+}
+
+cmd_set_qam256() {
+    VAL="${1:-1}"
+    if [ -f /proc/net/wlan/cfg ]; then
+        echo "Probe256QAM $VAL" > /proc/net/wlan/cfg 2>/dev/null
+    fi
+    set_cfg_val QAM256 "$VAL"
+    echo "{\"success\":true,\"qam256\":$VAL,\"message\":\"256-QAM (TurboQAM) set to $VAL\"}"
+}
+
+cmd_set_cam() {
+    VAL="${1:-1}"
+    if [ -w /proc/net/wlan/setCAM ]; then
+        echo "$VAL" > /proc/net/wlan/setCAM 2>/dev/null
+    fi
+    set_cfg_val CAM "$VAL"
+    echo "{\"success\":true,\"cam\":$VAL,\"message\":\"Continuous Access Mode (CAM) set to $VAL\"}"
+}
+
+cmd_set_autoperf() {
+    VAL="${1:-1}"
+    if [ -w /proc/net/wlan/autoPerfCfg ]; then
+        echo "ForceEnable:$VAL" > /proc/net/wlan/autoPerfCfg 2>/dev/null
+    fi
+    set_cfg_val AUTOPERF "$VAL"
+    echo "{\"success\":true,\"autoperf\":$VAL,\"message\":\"Auto Performance Monitor set to $VAL\"}"
+}
+
+cmd_set_dbdc() {
+    VAL="${1:-2}"
+    if [ -f /proc/net/wlan/cfg ]; then
+        echo "DbdcMode $VAL" > /proc/net/wlan/cfg 2>/dev/null
+    fi
+    set_cfg_val DBDC "$VAL"
+    echo "{\"success\":true,\"dbdc\":$VAL,\"message\":\"DBDC Concurrency set to $VAL\"}"
+}
+
+cmd_set_country() {
+    CC="${1:-00}"
+    cmd wifi set-country-code "$CC" 2>/dev/null
+    echo "$CC" > /proc/net/wlan/country 2>/dev/null
+    set_cfg_val COUNTRY "$CC"
+    echo "{\"success\":true,\"country\":\"$CC\",\"message\":\"Regulatory Country Code set to $CC\"}"
+}
+
+cmd_set_tcp() {
+    CONG="${1:-bbr}"
+    echo "$CONG" > /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null
+    set_cfg_val TCP_CONG "$CONG"
+    echo "{\"success\":true,\"tcp_congestion\":\"$CONG\",\"message\":\"TCP Congestion Control set to $CONG\"}"
+}
+
+cmd_set_wlan_cfg() {
+    KEY="$1"
+    VAL="$2"
+    if [ -n "$KEY" ] && [ -n "$VAL" ] && [ -f /proc/net/wlan/cfg ]; then
+        echo "$KEY $VAL" > /proc/net/wlan/cfg 2>/dev/null
+        echo "{\"success\":true,\"key\":\"$KEY\",\"value\":\"$VAL\",\"message\":\"Driver parameter $KEY set to $VAL\"}"
+    else
+        echo "{\"success\":false,\"error\":\"Missing key or value or /proc/net/wlan/cfg unavailable\"}"
+    fi
+}
+
+cmd_set_wifi() {
+    ACTION="${1:-restart}"
+    case "$ACTION" in
+        enable)
+            svc wifi enable
+            ;;
+        disable)
+            svc wifi disable
+            ;;
+        restart)
+            svc wifi disable
+            sleep 1
+            svc wifi enable
+            ;;
+    esac
+    echo "{\"success\":true,\"action\":\"$ACTION\",\"message\":\"Wi-Fi $ACTION command executed\"}"
+}
+
+cmd_set_hotspot() {
+    ACTION="${1:-restart}"
+    if [ "$ACTION" = "enable" ]; then
+        cmd wifi start-softap 2>/dev/null || svc wifi startSoftAp 2>/dev/null
+    else
+        cmd wifi stop-softap 2>/dev/null || svc wifi stopSoftAp 2>/dev/null
+    fi
+    echo "{\"success\":true,\"action\":\"$ACTION\",\"message\":\"Hotspot $ACTION command sent\"}"
+}
+
+cmd_set_hotspot_cfg() {
+    NEW_SSID="$1"
+    NEW_PASS="$2"
+    NEW_BAND="$3" # "2.4" or "5"
+    NEW_CHAN="$4"
+
+    SAP_XML="/data/misc/apexdata/com.android.wifi/WifiConfigStoreSoftAp.xml"
+    if [ -f "$SAP_XML" ]; then
+        [ -n "$NEW_SSID" ] && sed -i "s|<string name=\"WifiSsid\">&quot;.*&quot;<\/string>|<string name=\"WifiSsid\">&quot;$NEW_SSID&quot;<\/string>|" "$SAP_XML"
+        [ -n "$NEW_PASS" ] && sed -i "s|<string name=\"Passphrase\">.*<\/string>|<string name=\"Passphrase\">$NEW_PASS<\/string>|" "$SAP_XML"
+        if [ "$NEW_BAND" = "2.4" ]; then
+            sed -i 's|<int name="Band" value="[0-9]*" \/>|<int name="Band" value="1" \/>|' "$SAP_XML"
+        elif [ "$NEW_BAND" = "5" ]; then
+            sed -i 's|<int name="Band" value="[0-9]*" \/>|<int name="Band" value="2" \/>|' "$SAP_XML"
+        fi
+        [ -n "$NEW_CHAN" ] && sed -i "s|<int name=\"Channel\" value=\"[0-9]*\" \/>|<int name=\"Channel\" value=\"$NEW_CHAN\" \/>|" "$SAP_XML"
+    fi
+    echo "{\"success\":true,\"ssid\":\"$NEW_SSID\",\"band\":\"$NEW_BAND\",\"message\":\"Hotspot configuration updated. Restart hotspot to apply.\"}"
+}
+
+cmd_block_mac() {
+    MAC="$1"
+    if [ -n "$MAC" ]; then
+        iptables -D FORWARD -m mac --mac-source "$MAC" -j DROP 2>/dev/null
+        iptables -I FORWARD -m mac --mac-source "$MAC" -j DROP
+        echo "{\"success\":true,\"mac\":\"$MAC\",\"message\":\"Client $MAC blocked\"}"
+    else
+        echo "{\"success\":false,\"error\":\"Missing MAC address\"}"
+    fi
+}
+
+cmd_unblock_mac() {
+    MAC="$1"
+    if [ -n "$MAC" ]; then
+        iptables -D FORWARD -m mac --mac-source "$MAC" -j DROP 2>/dev/null
+        echo "{\"success\":true,\"mac\":\"$MAC\",\"message\":\"Client $MAC unblocked\"}"
+    else
+        echo "{\"success\":false,\"error\":\"Missing MAC address\"}"
+    fi
+}
+
+cmd_apply_profile() {
+    PROF="${1:-default}"
+    case "$PROF" in
+        gaming)
+            # Ultra-Low Latency Gaming Profile
+            cmd_set_cam 1 >/dev/null
+            cmd_set_qam256 1 >/dev/null
+            cmd_set_autoperf 1 >/dev/null
+            cmd_set_tcp bbr >/dev/null
+            set_cfg_val PROFILE "gaming"
+            echo "{\"success\":true,\"profile\":\"gaming\",\"message\":\"Gaming Mode Active: Zero-Jitter Continuous Access Mode (CAM) enabled, 256-QAM enabled, TCP BBR active\"}"
+            ;;
+        max_throughput)
+            # Maximum Bandwidth & Speed Profile
+            cmd_set_cam 0 >/dev/null
+            cmd_set_qam256 1 >/dev/null
+            cmd_set_autoperf 1 >/dev/null
+            cmd_set_dbdc 2 >/dev/null
+            cmd_set_tcp bbr >/dev/null
+            # Buffer & aggregation tuning
+            echo "TxMaxAmsduInAmpduLen 8192" > /proc/net/wlan/cfg 2>/dev/null
+            echo "NetifStopTh 256" > /proc/net/wlan/cfg 2>/dev/null
+            echo "NetifStartTh 128" > /proc/net/wlan/cfg 2>/dev/null
+            set_cfg_val PROFILE "max_throughput"
+            echo "{\"success\":true,\"profile\":\"max_throughput\",\"message\":\"Max Throughput Active: 256-QAM active, 8K A-MSDU aggregation, DBDC enabled, TCP BBR active\"}"
+            ;;
+        battery_saver)
+            # Standard Power Saving Profile
+            cmd_set_cam 0 >/dev/null
+            cmd_set_autoperf 0 >/dev/null
+            set_cfg_val PROFILE "battery_saver"
+            echo "{\"success\":true,\"profile\":\"battery_saver\",\"message\":\"Battery Saver Active: 802.11 standard power management enabled\"}"
+            ;;
+        default|*)
+            # Reset to defaults
+            cmd_set_cam 0 >/dev/null
+            cmd_set_qam256 1 >/dev/null
+            cmd_set_autoperf 1 >/dev/null
+            set_cfg_val PROFILE "default"
+            echo "{\"success\":true,\"profile\":\"default\",\"message\":\"Default Optimized Profile Active\"}"
+            ;;
+    esac
+}
+
+cmd_dump_cfg() {
+    if [ -f /proc/net/wlan/cfg ]; then
+        echo "{"
+        echo "  \"success\": true,"
+        echo "  \"config\": ["
+        FIRST=1
+        RAW_CFG=$(cat /proc/net/wlan/cfg 2>/dev/null)
+        while IFS='|' read -r k v; do
+            [ -z "$k" ] && continue
+            [ "$k" = "DUMP CONFIGURATION :" ] && continue
+            [ "$k" = "<KEY|VALUE> OR <D:KEY|VALUE>" ] && continue
+            echo "$k" | grep -q "<KEY" && continue
+            [ "$k" = "'D': driver part current setting" ] && continue
+            echo "$k" | grep -q "^=" && continue
+            [ -z "$v" ] && continue
+            [ $FIRST -eq 0 ] && echo ","
+            printf '    {"key":"%s","val":"%s"}' "$k" "$v"
+            FIRST=0
+        done <<EOF
+$RAW_CFG
+EOF
+        echo ""
+        echo "  ]"
+        echo "}"
+    else
+        echo "{\"success\":false,\"error\":\"/proc/net/wlan/cfg unavailable\"}"
+    fi
+}
+
+case "$1" in
+    status)
+        cmd_status
+        ;;
+    set_qam256)
+        cmd_set_qam256 "$2"
+        ;;
+    set_cam)
+        cmd_set_cam "$2"
+        ;;
+    set_autoperf)
+        cmd_set_autoperf "$2"
+        ;;
+    set_dbdc)
+        cmd_set_dbdc "$2"
+        ;;
+    set_country)
+        cmd_set_country "$2"
+        ;;
+    set_tcp)
+        cmd_set_tcp "$2"
+        ;;
+    set_wlan_cfg)
+        cmd_set_wlan_cfg "$2" "$3"
+        ;;
+    set_wifi)
+        cmd_set_wifi "$2"
+        ;;
+    set_hotspot)
+        cmd_set_hotspot "$2"
+        ;;
+    set_hotspot_cfg)
+        cmd_set_hotspot_cfg "$2" "$3" "$4" "$5"
+        ;;
+    block_mac)
+        cmd_block_mac "$2"
+        ;;
+    unblock_mac)
+        cmd_unblock_mac "$2"
+        ;;
+    apply_profile)
+        cmd_apply_profile "$2"
+        ;;
+    dump_cfg)
+        cmd_dump_cfg
+        ;;
+    *)
+        echo "Usage: wifi_master {status|set_qam256|set_cam|set_autoperf|set_dbdc|set_country|set_tcp|set_wlan_cfg|set_wifi|set_hotspot|set_hotspot_cfg|block_mac|unblock_mac|apply_profile|dump_cfg}"
+        exit 1
+        ;;
+esac
+
+exit 0

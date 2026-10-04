@@ -1,0 +1,6 @@
+id=galaxy-wifi-master
+name=Galaxy Wi-Fi Master & Web Control Panel
+version=v1.0
+versionCode=100
+author=hoc
+description=Extreme MediaTek MT6853/MT6631 Wi-Fi Suite: 256-QAM (TurboQAM) Enabler, Continuous Access Mode (CAM) Ultra-Low Latency Gaming Engine, DBDC Concurrency, Packet Aggregation Buffer Optimizer, All-Channel & DFS Unlocking, and Full Glassmorphism Web Control Panel on port 8095 by hoc.

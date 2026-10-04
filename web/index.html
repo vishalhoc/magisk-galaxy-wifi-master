@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Galaxy Wi-Fi Master | MT6853 & MT6631 Suite</title>
+<style>
+:root {
+  --bg: #0b0f19;
+  --surface: #111827;
+  --surface-card: rgba(17, 24, 39, 0.75);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-focus: #3b82f6;
+  --primary: #3b82f6;
+  --primary-glow: rgba(59, 130, 246, 0.35);
+  --accent: #06b6d4;
+  --accent-glow: rgba(6, 182, 212, 0.35);
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --text-main: #f9fafb;
+  --text-sub: #9ca3af;
+  --radius: 14px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; }
+body { background: var(--bg); color: var(--text-main); min-height: 100vh; padding: 16px; background-attachment: fixed; background-image: radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.08) 0%, transparent 40%), radial-gradient(circle at 90% 80%, rgba(6, 182, 212, 0.08) 0%, transparent 40%); }
+.container { max-width: 1050px; margin: 0 auto; }
+
+/* Header */
+header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; padding: 18px 24px; background: var(--surface-card); backdrop-filter: blur(16px); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 18px; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
+.logo-title { display: flex; align-items: center; gap: 14px; }
+.logo-icon { width: 44px; height: 44px; border-radius: 12px; background: linear-gradient(135deg, var(--primary), var(--accent)); display: flex; align-items: center; justify-content: center; font-size: 24px; box-shadow: 0 0 20px var(--primary-glow); }
+.logo-title h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; background: linear-gradient(90deg, #fff, #93c5fd); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.logo-title p { font-size: 12px; color: var(--text-sub); margin-top: 2px; }
+.header-badges { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.badge { font-size: 11px; padding: 5px 11px; border-radius: 20px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); }
+.badge-neon { border-color: var(--primary); color: #93c5fd; background: rgba(59, 130, 246, 0.15); box-shadow: 0 0 10px var(--primary-glow); }
+.badge-green { border-color: var(--success); color: #6ee7b7; background: rgba(16, 185, 129, 0.15); }
+.badge-amber { border-color: var(--warning); color: #fde68a; background: rgba(245, 158, 11, 0.15); }
+.refresh-btn { background: rgba(255,255,255,0.08); border: 1px solid var(--border); color: #fff; padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s; }
+.refresh-btn:hover { background: var(--primary); border-color: var(--primary); box-shadow: 0 0 14px var(--primary-glow); }
+
+/* Quick Profiles Bar */
+.profiles-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+.profile-btn { flex: 1; min-width: 140px; padding: 12px 14px; border-radius: var(--radius); background: var(--surface-card); border: 1px solid var(--border); color: var(--text-main); font-weight: 600; font-size: 13px; cursor: pointer; text-align: center; transition: all 0.2s; backdrop-filter: blur(10px); }
+.profile-btn:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
+.profile-btn.active { background: linear-gradient(135deg, rgba(59,130,246,0.25), rgba(6,182,212,0.25)); border-color: var(--primary); color: #fff; box-shadow: 0 0 15px var(--primary-glow); }
+.profile-btn span { display: block; font-size: 11px; font-weight: 400; color: var(--text-sub); margin-top: 3px; }
+
+/* Tabs Navigation */
+.tabs { display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 10px; overflow-x: auto; }
+.tab-btn { background: none; border: none; padding: 10px 18px; color: var(--text-sub); font-size: 14px; font-weight: 600; border-radius: 8px; cursor: pointer; white-space: nowrap; transition: all 0.2s; }
+.tab-btn:hover { color: var(--text-main); background: rgba(255,255,255,0.04); }
+.tab-btn.active { color: #fff; background: var(--primary); box-shadow: 0 0 14px var(--primary-glow); }
+
+/* Tab Panes */
+.tab-pane { display: none; }
+.tab-pane.active { display: block; animation: fadeIn 0.25s ease-out; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Cards & Layout */
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.card { background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; backdrop-filter: blur(16px); box-shadow: 0 8px 24px rgba(0,0,0,0.25); position: relative; overflow: hidden; }
+.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.card-title { font-size: 15px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; }
+
+/* Signal Gauge */
+.signal-box { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 16px 0; }
+.signal-val { font-size: 32px; font-weight: 800; color: var(--accent); }
+.signal-desc { font-size: 13px; color: var(--text-sub); text-align: right; }
+.bar-track { width: 100%; height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; margin-top: 8px; }
+.bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--primary)); border-radius: 4px; transition: width 0.5s ease; }
+
+/* Metrics Row */
+.metric-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 13px; }
+.metric-row:last-child { border-bottom: none; }
+.metric-label { color: var(--text-sub); display: flex; align-items: center; gap: 6px; }
+.metric-val { font-weight: 600; color: #fff; font-family: monospace; font-size: 13px; }
+
+/* Switches / Toggles */
+.toggle-wrapper { display: flex; justify-content: space-between; align-items: center; padding: 14px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 12px; transition: all 0.2s; }
+.toggle-wrapper:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.15); }
+.toggle-info h4 { font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 3px; }
+.toggle-info p { font-size: 11px; color: var(--text-sub); line-height: 1.4; max-width: 480px; }
+.switch { position: relative; display: inline-block; width: 48px; height: 26px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(255,255,255,0.15); transition: .3s; border-radius: 26px; }
+.slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
+input:checked + .slider { background: linear-gradient(135deg, var(--primary), var(--accent)); box-shadow: 0 0 10px var(--primary-glow); }
+input:checked + .slider:before { transform: translateX(22px); }
+
+/* Controls & Inputs */
+.form-group { margin-bottom: 14px; }
+.form-label { display: block; font-size: 12px; font-weight: 600; color: var(--text-sub); margin-bottom: 6px; }
+.form-control { width: 100%; padding: 10px 14px; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 8px; color: #fff; font-size: 13px; outline: none; transition: border-color 0.2s; }
+.form-control:focus { border-color: var(--primary); }
+.btn { padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.btn-primary { background: linear-gradient(135deg, var(--primary), #2563eb); color: #fff; box-shadow: 0 4px 12px var(--primary-glow); }
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px var(--primary-glow); }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-secondary { background: rgba(255,255,255,0.08); border: 1px solid var(--border); color: #fff; }
+.btn-secondary:hover { background: rgba(255,255,255,0.14); }
+
+/* Table */
+.table-wrap { overflow-x: auto; max-height: 480px; border: 1px solid var(--border); border-radius: 10px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { background: rgba(0,0,0,0.4); color: var(--text-sub); font-weight: 600; padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1; }
+td { padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text-main); }
+tr:hover td { background: rgba(255,255,255,0.02); }
+
+/* Toast */
+#toast { position: fixed; bottom: 24px; right: 24px; background: var(--surface); border: 1px solid var(--primary); color: #fff; padding: 12px 20px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); z-index: 9999; font-size: 13px; font-weight: 500; display: none; transform: translateY(20px); transition: all 0.3s; }
+#toast.show { display: block; transform: translateY(0); }
+
+/* Modal */
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; z-index: 999; }
+.modal-overlay.show { display: flex; }
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); width: 90%; max-width: 440px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.6); }
+.modal-title { font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 14px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Header -->
+  <header>
+    <div class="logo-title">
+      <div class="logo-icon">📶</div>
+      <div>
+        <h1>Galaxy Wi-Fi Master</h1>
+        <p>MediaTek Dimensity 720 &bull; MT6631 CONNSYS 2.0 (Mouton ASIC)</p>
+      </div>
+    </div>
+    <div class="header-badges">
+      <span class="badge badge-neon" id="badge-chip">MT6631 E1</span>
+      <span class="badge badge-green" id="badge-qam">256-QAM</span>
+      <span class="badge" id="badge-cam">CAM: OFF</span>
+      <button class="refresh-btn" onclick="fetchStatus()">↺ Refresh</button>
+    </div>
+  </header>
+
+  <!-- Quick Profiles Bar -->
+  <div class="profiles-bar">
+    <button class="profile-btn" id="prof-gaming" onclick="applyProfile('gaming')">
+      🎮 Gaming Mode
+      <span>CAM Zero-Jitter &bull; BBR</span>
+    </button>
+    <button class="profile-btn" id="prof-max_throughput" onclick="applyProfile('max_throughput')">
+      🚀 Max Throughput
+      <span>256-QAM &bull; 8K A-MSDU</span>
+    </button>
+    <button class="profile-btn" id="prof-battery_saver" onclick="applyProfile('battery_saver')">
+      🔋 Battery Saver
+      <span>Standard 802.11 PSM</span>
+    </button>
+    <button class="profile-btn" id="prof-default" onclick="applyProfile('default')">
+      ↺ Stock Optimized
+      <span>Balanced Defaults</span>
+    </button>
+  </div>
+
+  <!-- Tabs Navigation -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('tab-dash', this)">📊 Dashboard & Live Telemetry</button>
+    <button class="tab-btn" onclick="switchTab('tab-accel', this)">⚡ Feature Accelerators</button>
+    <button class="tab-btn" onclick="switchTab('tab-hotspot', this)">📡 Hotspot & Tethering</button>
+    <button class="tab-btn" onclick="switchTab('tab-driver', this)">🛠️ Driver /proc Config</button>
+  </div>
+
+  <!-- TAB 1: DASHBOARD -->
+  <div id="tab-dash" class="tab-pane active">
+    <div class="grid-2">
+      <!-- Live Wi-Fi Connection Card -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🌐 Wi-Fi Station Status</div>
+          <span class="badge badge-green" id="conn-state">UP</span>
+        </div>
+        <div class="signal-box">
+          <div>
+            <div class="signal-val" id="sig-val">-127 dBm</div>
+            <div style="font-size:12px; color:var(--text-sub);" id="sig-quality">No Signal</div>
+          </div>
+          <div class="signal-desc">
+            <div id="sig-ssid" style="font-size:15px; font-weight:700; color:#fff;">Disconnected</div>
+            <div id="sig-bssid" style="font-size:11px; color:var(--text-sub);">--:--:--:--:--:--</div>
+          </div>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill" id="sig-bar" style="width: 0%;"></div>
+        </div>
+        <div style="margin-top:16px;">
+          <div class="metric-row"><span class="metric-label">Band / Channel</span><span class="metric-val" id="metric-band">-- / Ch --</span></div>
+          <div class="metric-row"><span class="metric-label">Link Speed</span><span class="metric-val" id="metric-speed">-- Mbps</span></div>
+          <div class="metric-row"><span class="metric-label">IP Address</span><span class="metric-val" id="metric-ip">--</span></div>
+          <div class="metric-row"><span class="metric-label">Gateway</span><span class="metric-val" id="metric-gw">--</span></div>
+          <div class="metric-row"><span class="metric-label">DNS Servers</span><span class="metric-val" id="metric-dns">--</span></div>
+          <div class="metric-row"><span class="metric-label">MAC Address</span><span class="metric-val" id="metric-mac">--</span></div>
+        </div>
+      </div>
+
+      <!-- Hardware & Driver Overview Card -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">⚙️ Hardware & Stack</div>
+          <span class="badge badge-neon">CONNSYS 2.0</span>
+        </div>
+        <div class="metric-row"><span class="metric-label">SoC Platform</span><span class="metric-val">MT6853 Dimensity 720</span></div>
+        <div class="metric-row"><span class="metric-label">Wi-Fi Transceiver</span><span class="metric-val">MT6631 E1 ASIC</span></div>
+        <div class="metric-row"><span class="metric-label">Driver Architecture</span><span class="metric-val">MediaTek Gen4m</span></div>
+        <div class="metric-row"><span class="metric-label">Driver Release</span><span class="metric-val" id="hw-drv">MTK_4_1_10</span></div>
+        <div class="metric-row"><span class="metric-label">Firmware Patch</span><span class="metric-val" id="hw-fw" style="font-size:11px;">Mouton ASIC</span></div>
+        <div class="metric-row"><span class="metric-label">TCP Congestion</span><span class="metric-val" id="hw-tcp" style="color:#93c5fd;">bbr</span></div>
+        <div class="metric-row"><span class="metric-label">DFS Restriction</span><span class="metric-val" id="hw-dfs" style="color:#6ee7b7;">UNLOCKED</span></div>
+        <div class="metric-row"><span class="metric-label">Country Code</span><span class="metric-val" id="hw-cc">00 (World)</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 2: FEATURE ACCELERATORS -->
+  <div id="tab-accel" class="tab-pane">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🚀 Wi-Fi Hardware & Kernel Accelerators</div>
+      </div>
+
+      <!-- 256-QAM Switch -->
+      <div class="toggle-wrapper">
+        <div class="toggle-info">
+          <h4>256-QAM (TurboQAM) Modulation</h4>
+          <p>Unlocks 256-QAM high-density constellation on 2.4 GHz and 5 GHz. Boosts 2.4 GHz peak speeds from 150/300 Mbps to 200/400 Mbps (+33% throughput).</p>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="toggle-qam" onchange="setQam(this.checked)">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <!-- Continuous Access Mode (CAM) Switch -->
+      <div class="toggle-wrapper">
+        <div class="toggle-info">
+          <h4>Ultra-Low Latency Continuous Access Mode (CAM)</h4>
+          <p>Disables 802.11 power-saving sleep cycles. Transceiver remains continuously active, eliminating 50&ndash;150ms periodic ping spikes for competitive gaming.</p>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="toggle-cam" onchange="setCam(this.checked)">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <!-- AutoPerf Monitor Switch -->
+      <div class="toggle-wrapper">
+        <div class="toggle-info">
+          <h4>Auto Performance Monitor (autoPerfCfg)</h4>
+          <p>Enables continuous hardware link rate adaptation monitoring for instantaneous PHY rate switching under interference.</p>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="toggle-autoperf" onchange="setAutoPerf(this.checked)">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <!-- DBDC Mode -->
+      <div class="toggle-wrapper">
+        <div class="toggle-info">
+          <h4>Dual Band Dual Concurrent (DBDC) Concurrency</h4>
+          <p>Hardware-level concurrent dual-band operation enabling simultaneous 2.4 GHz and 5 GHz operations.</p>
+        </div>
+        <select class="form-control" style="width:140px;" id="select-dbdc" onchange="setDbdc(this.value)">
+          <option value="0">Disabled (0)</option>
+          <option value="1">Auto (1)</option>
+          <option value="2">Forced (2)</option>
+        </select>
+      </div>
+
+      <!-- DFS & Channel Unlock Indicator -->
+      <div class="toggle-wrapper">
+        <div class="toggle-info">
+          <h4>All-Channel & DFS Restrictions Override</h4>
+          <p>Systemless overlay of <code>indoorchannel.info</code> and <code>wpa_supplicant_overlay.conf</code> eliminates DFS wait locks on channels 52&ndash;144 and UNII-3 149&ndash;165.</p>
+        </div>
+        <span class="badge badge-green">ACTIVE (UNLOCKED)</span>
+      </div>
+
+      <!-- System Selectors Row -->
+      <div class="grid-2" style="margin-top:16px;">
+        <div class="form-group">
+          <label class="form-label">TCP Congestion Algorithm</label>
+          <div style="display:flex; gap:8px;">
+            <select class="form-control" id="select-tcp">
+              <option value="bbr">BBR (Google Bottleneck Bandwidth)</option>
+              <option value="cubic">CUBIC (High Throughput)</option>
+              <option value="reno">RENO (Classic)</option>
+              <option value="bic">BIC</option>
+            </select>
+            <button class="btn btn-primary" onclick="setTcp()">Apply</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Regulatory Country Code</label>
+          <div style="display:flex; gap:8px;">
+            <select class="form-control" id="select-country">
+              <option value="00">00 (Global Unrestricted)</option>
+              <option value="IN">IN (India - High Power 5GHz)</option>
+              <option value="US">US (United States - UNII-1/2/3)</option>
+              <option value="EU">EU (Europe)</option>
+              <option value="JP">JP (Japan)</option>
+            </select>
+            <button class="btn btn-primary" onclick="setCountry()">Apply</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px; display:flex; gap:10px;">
+        <button class="btn btn-secondary" onclick="cycleWifi()">↺ Restart Wi-Fi Radio</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 3: HOTSPOT & TETHERING -->
+  <div id="tab-hotspot" class="tab-pane">
+    <div class="grid-2">
+      <!-- Hotspot Configuration Card -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📡 Wi-Fi Hotspot (SoftAP) Control</div>
+          <span class="badge" id="hotspot-badge">INACTIVE</span>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Hotspot Network Name (SSID)</label>
+          <input type="text" class="form-control" id="hotspot-ssid" placeholder="Galaxy M32 5G">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Security Passphrase (WPA2/WPA3)</label>
+          <input type="text" class="form-control" id="hotspot-pass" placeholder="Password (min 8 chars)">
+        </div>
+
+        <div class="grid-2" style="margin-bottom:0;">
+          <div class="form-group">
+            <label class="form-label">Broadcast Band</label>
+            <select class="form-control" id="hotspot-band">
+              <option value="5">5 GHz (High-Speed VHT80)</option>
+              <option value="2.4">2.4 GHz (Long Range)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Channel</label>
+            <select class="form-control" id="hotspot-chan">
+              <option value="149">Ch 149 (5745 MHz)</option>
+              <option value="153">Ch 153 (5765 MHz)</option>
+              <option value="157">Ch 157 (5785 MHz)</option>
+              <option value="161">Ch 161 (5805 MHz)</option>
+              <option value="36">Ch 36 (5180 MHz)</option>
+              <option value="40">Ch 40 (5200 MHz)</option>
+              <option value="44">Ch 44 (5220 MHz)</option>
+              <option value="48">Ch 48 (5240 MHz)</option>
+              <option value="6">Ch 6 (2437 MHz)</option>
+              <option value="1">Ch 1 (2412 MHz)</option>
+              <option value="11">Ch 11 (2462 MHz)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:10px; margin-top:14px;">
+          <button class="btn btn-primary" onclick="saveHotspotCfg()">Save Hotspot Settings</button>
+          <button class="btn btn-secondary" id="btn-toggle-hotspot" onclick="toggleHotspot()">Toggle Hotspot</button>
+        </div>
+      </div>
+
+      <!-- Connected Clients Card -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">👥 Connected Clients</div>
+          <span class="badge" id="client-count">0 Clients</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>IP Address</th>
+                <th>MAC Address</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="clients-tbody">
+              <tr><td colspan="3" style="text-align:center; color:var(--text-sub);">No clients connected</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-top:16px;">
+          <div class="card-title" style="font-size:13px; margin-bottom:8px;">🚫 Blocked Clients</div>
+          <div id="blocked-tags" style="display:flex; gap:6px; flex-wrap:wrap;">
+            <span style="font-size:12px; color:var(--text-sub);">None</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 4: DRIVER PROC CONFIG -->
+  <div id="tab-driver" class="tab-pane">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🛠️ /proc/net/wlan/cfg Live Parameters</div>
+        <div style="display:flex; gap:8px;">
+          <input type="text" class="form-control" style="width:200px; padding:6px 10px;" id="cfg-search" placeholder="Search parameters..." oninput="filterCfg()">
+          <button class="refresh-btn" onclick="fetchDriverCfg()">↺ Reload</button>
+        </div>
+      </div>
+
+      <!-- Quick Write Form -->
+      <div style="display:flex; gap:8px; margin-bottom:14px;">
+        <input type="text" class="form-control" style="flex:1;" id="raw-key" placeholder="Parameter Key (e.g. Probe256QAM)">
+        <input type="text" class="form-control" style="flex:1;" id="raw-val" placeholder="Value (e.g. 1)">
+        <button class="btn btn-primary" onclick="writeRawCfg()">Write</button>
+      </div>
+
+      <div class="table-wrap" style="max-height: 540px;">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 50%;">Parameter</th>
+              <th style="width: 35%;">Current Value</th>
+              <th style="width: 15%;">Action</th>
+            </tr>
+          </thead>
+          <tbody id="cfg-tbody">
+            <tr><td colspan="3" style="text-align:center; color:var(--text-sub);">Click Reload to inspect all 120+ driver parameters</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal for editing parameter -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal">
+    <div class="modal-title">Edit Driver Parameter</div>
+    <div class="form-group">
+      <label class="form-label" id="modal-key-label">Key</label>
+      <input type="text" class="form-control" id="modal-val-input">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitModalEdit()">Apply</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast">Settings updated successfully</div>
+
+<script>
+let state = {};
+let allConfigs = [];
+let editingKey = "";
+
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.innerText = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 3200);
+}
+
+function switchTab(tabId, el) {
+  document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  document.getElementById(tabId).classList.add("active");
+  el.classList.add("active");
+  if (tabId === "tab-driver" && allConfigs.length === 0) {
+    fetchDriverCfg();
+  }
+}
+
+async function api(action, params = {}) {
+  const q = new URLSearchParams({ action, ...params }).toString();
+  try {
+    const res = await fetch(`/cgi-bin/api.cgi?${q}`);
+    return await res.json();
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+}
+
+async function fetchStatus() {
+  const data = await api("status");
+  if (!data || !data.success) return;
+  state = data;
+
+  // Telemetry
+  const t = data.telemetry || {};
+  document.getElementById("conn-state").innerText = t.state || "DOWN";
+  document.getElementById("conn-state").className = (t.state === "UP") ? "badge badge-green" : "badge";
+  document.getElementById("sig-val").innerText = (t.rssi && t.rssi > -127) ? `${t.rssi} dBm` : "Offline";
+  document.getElementById("sig-ssid").innerText = t.ssid || "Disconnected";
+  document.getElementById("sig-bssid").innerText = t.bssid || "No BSSID";
+  document.getElementById("metric-band").innerText = `${t.band || '--'} / Ch ${t.channel || '--'}`;
+  document.getElementById("metric-speed").innerText = (t.link_speed_mbps && t.link_speed_mbps > 0) ? `${t.link_speed_mbps} Mbps` : "--";
+  document.getElementById("metric-ip").innerText = t.ip || "None";
+  document.getElementById("metric-gw").innerText = t.gateway || "None";
+  document.getElementById("metric-dns").innerText = `${t.dns1 || '--'}, ${t.dns2 || '--'}`;
+  document.getElementById("metric-mac").innerText = t.mac || "--";
+
+  // RSSI Bar
+  let pct = 0;
+  if (t.rssi && t.rssi > -127) {
+    pct = Math.max(0, Math.min(100, Math.round(((t.rssi + 100) / 50) * 100)));
+  }
+  document.getElementById("sig-bar").style.width = pct + "%";
+  let qText = "Disconnected";
+  if (pct > 75) qText = "Excellent Signal";
+  else if (pct > 50) qText = "Good Signal";
+  else if (pct > 25) qText = "Fair Signal";
+  else if (pct > 0) qText = "Weak Signal";
+  document.getElementById("sig-quality").innerText = qText;
+
+  // Features
+  const f = data.features || {};
+  document.getElementById("toggle-qam").checked = (f.qam256 == 1);
+  document.getElementById("badge-qam").innerText = (f.qam256 == 1) ? "256-QAM ACTIVE" : "256-QAM OFF";
+  document.getElementById("badge-qam").className = (f.qam256 == 1) ? "badge badge-green" : "badge";
+
+  document.getElementById("toggle-cam").checked = (f.cam_mode == 1);
+  document.getElementById("badge-cam").innerText = (f.cam_mode == 1) ? "CAM: GAMING" : "CAM: OFF";
+  document.getElementById("badge-cam").className = (f.cam_mode == 1) ? "badge badge-neon" : "badge";
+
+  document.getElementById("toggle-autoperf").checked = (f.auto_perf == 1);
+  document.getElementById("select-dbdc").value = f.dbdc_mode || "0";
+  document.getElementById("hw-tcp").innerText = f.tcp_congestion || "bbr";
+  document.getElementById("select-tcp").value = f.tcp_congestion || "bbr";
+  document.getElementById("hw-cc").innerText = f.country_code || "00";
+
+  // Profile Buttons
+  document.querySelectorAll(".profile-btn").forEach(b => b.classList.remove("active"));
+  const profEl = document.getElementById("prof-" + (f.active_profile || "default"));
+  if (profEl) profEl.classList.add("active");
+
+  // Hardware
+  const h = data.hardware || {};
+  document.getElementById("hw-drv").innerText = h.driver_version || "MTK_4_1_10";
+  document.getElementById("hw-fw").innerText = h.firmware_version ? h.firmware_version.split("-").slice(-2).join("-") : "MOUTON_SOC2_0";
+
+  // Hotspot
+  const hs = data.hotspot || {};
+  document.getElementById("hotspot-badge").innerText = hs.active ? "ACTIVE" : "INACTIVE";
+  document.getElementById("hotspot-badge").className = hs.active ? "badge badge-green" : "badge";
+  document.getElementById("btn-toggle-hotspot").innerText = hs.active ? "Stop Hotspot" : "Start Hotspot";
+  if (hs.ssid) document.getElementById("hotspot-ssid").value = hs.ssid;
+  if (hs.passphrase) document.getElementById("hotspot-pass").value = hs.passphrase;
+  if (hs.channel) document.getElementById("hotspot-chan").value = hs.channel;
+
+  // Clients
+  const clients = hs.clients || [];
+  document.getElementById("client-count").innerText = `${clients.length} Clients`;
+  const tb = document.getElementById("clients-tbody");
+  if (clients.length === 0) {
+    tb.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--text-sub);">No clients connected</td></tr>';
+  } else {
+    tb.innerHTML = clients.map(c => `
+      <tr>
+        <td><b>${c.ip}</b></td>
+        <td><code>${c.mac}</code></td>
+        <td><button class="btn btn-danger" style="padding:4px 8px; font-size:11px;" onclick="blockMac('${c.mac}')">Block</button></td>
+      </tr>
+    `).join("");
+  }
+
+  // Blocked MACs
+  const blocked = hs.blocked_macs || [];
+  const bDiv = document.getElementById("blocked-tags");
+  if (blocked.length === 0) {
+    bDiv.innerHTML = '<span style="font-size:12px; color:var(--text-sub);">None</span>';
+  } else {
+    bDiv.innerHTML = blocked.map(m => `
+      <span class="badge badge-amber" style="display:inline-flex; align-items:center; gap:6px;">
+        ${m} <span style="cursor:pointer; font-weight:bold;" onclick="unblockMac('${m}')">&times;</span>
+      </span>
+    `).join("");
+  }
+}
+
+async function setQam(enabled) {
+  const res = await api("set_qam256", { val: enabled ? 1 : 0 });
+  showToast(res ? res.message : "256-QAM updated");
+  fetchStatus();
+}
+
+async function setCam(enabled) {
+  const res = await api("set_cam", { val: enabled ? 1 : 0 });
+  showToast(res ? res.message : "CAM mode updated");
+  fetchStatus();
+}
+
+async function setAutoPerf(enabled) {
+  const res = await api("set_autoperf", { val: enabled ? 1 : 0 });
+  showToast(res ? res.message : "AutoPerf updated");
+  fetchStatus();
+}
+
+async function setDbdc(val) {
+  const res = await api("set_dbdc", { val });
+  showToast(res ? res.message : "DBDC mode updated");
+  fetchStatus();
+}
+
+async function setTcp() {
+  const val = document.getElementById("select-tcp").value;
+  const res = await api("set_tcp", { val });
+  showToast(res ? res.message : "TCP congestion updated");
+  fetchStatus();
+}
+
+async function setCountry() {
+  const val = document.getElementById("select-country").value;
+  const res = await api("set_country", { val });
+  showToast(res ? res.message : "Country code updated");
+  fetchStatus();
+}
+
+async function cycleWifi() {
+  showToast("Restarting Wi-Fi radio...");
+  await api("set_wifi", { val: "restart" });
+  setTimeout(fetchStatus, 3000);
+}
+
+async function applyProfile(name) {
+  showToast("Applying profile: " + name + "...");
+  const res = await api("apply_profile", { val: name });
+  showToast(res ? res.message : "Profile applied");
+  fetchStatus();
+}
+
+async function toggleHotspot() {
+  const active = (state.hotspot && state.hotspot.active);
+  showToast(active ? "Stopping Hotspot..." : "Starting Hotspot...");
+  await api("set_hotspot", { val: active ? "disable" : "enable" });
+  setTimeout(fetchStatus, 3000);
+}
+
+async function saveHotspotCfg() {
+  const ssid = document.getElementById("hotspot-ssid").value;
+  const pass = document.getElementById("hotspot-pass").value;
+  const band = document.getElementById("hotspot-band").value;
+  const chan = document.getElementById("hotspot-chan").value;
+  const res = await api("set_hotspot_cfg", { ssid, pass, band, chan });
+  showToast(res ? res.message : "Hotspot configuration saved");
+  fetchStatus();
+}
+
+async function blockMac(mac) {
+  const res = await api("block_mac", { mac });
+  showToast(res ? res.message : "Client blocked");
+  fetchStatus();
+}
+
+async function unblockMac(mac) {
+  const res = await api("unblock_mac", { mac });
+  showToast(res ? res.message : "Client unblocked");
+  fetchStatus();
+}
+
+async function fetchDriverCfg() {
+  const data = await api("dump_cfg");
+  if (!data || !data.success) return;
+  allConfigs = data.config || [];
+  renderCfgTable(allConfigs);
+}
+
+function renderCfgTable(items) {
+  const tb = document.getElementById("cfg-tbody");
+  if (items.length === 0) {
+    tb.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--text-sub);">No matching parameters</td></tr>';
+    return;
+  }
+  tb.innerHTML = items.map(c => `
+    <tr>
+      <td><code>${c.key}</code></td>
+      <td><b>${c.val}</b></td>
+      <td><button class="btn btn-secondary" style="padding:4px 8px; font-size:11px;" onclick="openEditModal('${c.key}', '${c.val}')">Edit</button></td>
+    </tr>
+  `).join("");
+}
+
+function filterCfg() {
+  const q = document.getElementById("cfg-search").value.toLowerCase();
+  const filtered = allConfigs.filter(c => c.key.toLowerCase().includes(q) || c.val.toLowerCase().includes(q));
+  renderCfgTable(filtered);
+}
+
+function openEditModal(key, val) {
+  editingKey = key;
+  document.getElementById("modal-key-label").innerText = key;
+  document.getElementById("modal-val-input").value = val;
+  document.getElementById("edit-modal").classList.add("show");
+}
+
+function closeModal() {
+  document.getElementById("edit-modal").classList.remove("show");
+}
+
+async function submitModalEdit() {
+  const val = document.getElementById("modal-val-input").value;
+  closeModal();
+  showToast(`Writing ${editingKey} = ${val}...`);
+  const res = await api("set_wlan_cfg", { key: editingKey, val });
+  showToast(res ? res.message : "Parameter updated");
+  fetchDriverCfg();
+}
+
+async function writeRawCfg() {
+  const key = document.getElementById("raw-key").value.trim();
+  const val = document.getElementById("raw-val").value.trim();
+  if (!key || !val) {
+    alert("Please enter both Key and Value");
+    return;
+  }
+  showToast(`Writing ${key} = ${val}...`);
+  const res = await api("set_wlan_cfg", { key, val });
+  showToast(res ? res.message : "Parameter updated");
+  document.getElementById("raw-key").value = "";
+  document.getElementById("raw-val").value = "";
+  fetchDriverCfg();
+}
+
+// Initial Load & Auto Poll
+fetchStatus();
+setInterval(fetchStatus, 5000);
+</script>
+
+</body>
+</html>
