@@ -84,6 +84,8 @@ apply_wifi_settings() {
         echo "TxMaxAmsduInAmpduLen 8192" > /proc/net/wlan/cfg 2>/dev/null
         echo "NetifStopTh 256" > /proc/net/wlan/cfg 2>/dev/null
         echo "NetifStartTh 128" > /proc/net/wlan/cfg 2>/dev/null
+        echo "SG5GFavorANT 0" > /proc/net/wlan/cfg 2>/dev/null
+        echo "SG24GFavorANT 0" > /proc/net/wlan/cfg 2>/dev/null
     fi
 
     if [ -f /proc/net/wlan/setCAM ]; then
@@ -169,6 +171,7 @@ start_web_daemon
             # Keep carrier tethering offload disabled & DUN bypassed
             settings put global tether_dun_required 0 2>/dev/null
             settings put global tether_offload_disabled 1 2>/dev/null
+            settings put global private_dns_mode off 2>/dev/null
             setprop net.tethering.noprovisioning true 2>/dev/null
 
             # Periodic 30s cellular WAN keepalive
