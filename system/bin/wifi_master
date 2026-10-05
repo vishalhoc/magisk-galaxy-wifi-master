@@ -13,9 +13,9 @@ ensure_cfg() {
 QAM256=1
 CAM=0
 AUTOPERF=1
-DBDC=2
-NSS=2
-BW5G=3
+DBDC=0
+NSS=1
+BW5G=2
 TCP_CONG=bbr
 COUNTRY=00
 PROFILE=default
@@ -453,7 +453,7 @@ cmd_set_autoperf() {
 }
 
 cmd_set_dbdc() {
-    VAL="${1:-2}"
+    VAL="${1:-0}"
     if [ -f /proc/net/wlan/cfg ]; then
         echo "DbdcMode $VAL" > /proc/net/wlan/cfg 2>/dev/null
     fi
@@ -462,7 +462,7 @@ cmd_set_dbdc() {
 }
 
 cmd_set_nss() {
-    VAL="${1:-2}"
+    VAL="${1:-1}"
     if [ -f /proc/net/wlan/driver ]; then
         echo "SET_NSS $VAL" > /proc/net/wlan/driver 2>/dev/null
     fi
@@ -479,7 +479,7 @@ cmd_set_nss() {
     fi
     set_cfg_val NSS "$VAL"
     MAX_PHY=$([ "$VAL" = "2" ] && echo 866 || echo 433)
-    echo "{\"success\":true,\"nss\":$VAL,\"max_speed\":$MAX_PHY,\"message\":\"Spatial Streams (MIMO) set to ${VAL}x${VAL} ($([ "$VAL" = "2" ] && echo "866 Mbps Boost" || echo "433 Mbps Standard"))\"}"
+    echo "{\"success\":true,\"nss\":$VAL,\"max_speed\":$MAX_PHY,\"message\":\"Spatial Streams (MIMO) set to ${VAL}x${VAL} ($([ "$VAL" = "2" ] && echo "866 Mbps Boost (Antenna Shared)" || echo "433 Mbps Standard (Cellular Safe)"))\"}"
 }
 
 cmd_revert() {
@@ -644,31 +644,31 @@ cmd_apply_profile() {
     PROF="${1:-default}"
     case "$PROF" in
         gaming)
-            # Ultra-Low Latency Gaming Profile
+            # Ultra-Low Latency Gaming Profile (Cellular Safe)
             cmd_set_cam 1 >/dev/null
             cmd_set_qam256 1 >/dev/null
             cmd_set_autoperf 1 >/dev/null
-            cmd_set_nss 2 >/dev/null
-            cmd_set_bw5g 3 >/dev/null
+            cmd_set_nss 1 >/dev/null
+            cmd_set_bw5g 2 >/dev/null
             cmd_set_tcp bbr >/dev/null
             set_cfg_val PROFILE "gaming"
-            echo "{\"success\":true,\"profile\":\"gaming\",\"message\":\"Gaming Mode Active: Zero-Jitter Continuous Access Mode (CAM) enabled, 256-QAM enabled, 2x2 MIMO 866 Mbps Boost, TCP BBR active\"}"
+            echo "{\"success\":true,\"profile\":\"gaming\",\"message\":\"Gaming Mode Active: Zero-Jitter Continuous Access Mode (CAM) enabled, 256-QAM enabled, Cellular-Safe 1x1 SISO, TCP BBR active\"}"
             ;;
         max_throughput)
-            # Maximum Bandwidth & Speed Profile
+            # Maximum Bandwidth & Speed Profile (Cellular Safe)
             cmd_set_cam 0 >/dev/null
             cmd_set_qam256 1 >/dev/null
             cmd_set_autoperf 1 >/dev/null
-            cmd_set_dbdc 2 >/dev/null
-            cmd_set_nss 2 >/dev/null
-            cmd_set_bw5g 3 >/dev/null
+            cmd_set_dbdc 0 >/dev/null
+            cmd_set_nss 1 >/dev/null
+            cmd_set_bw5g 2 >/dev/null
             cmd_set_tcp bbr >/dev/null
             # Buffer & aggregation tuning
             echo "TxMaxAmsduInAmpduLen 8192" > /proc/net/wlan/cfg 2>/dev/null
             echo "NetifStopTh 256" > /proc/net/wlan/cfg 2>/dev/null
             echo "NetifStartTh 128" > /proc/net/wlan/cfg 2>/dev/null
             set_cfg_val PROFILE "max_throughput"
-            echo "{\"success\":true,\"profile\":\"max_throughput\",\"message\":\"Max Throughput Active: 256-QAM active, 2x2 MIMO 866-1733 Mbps Boost, 160MHz BW, 8K A-MSDU, TCP BBR active\"}"
+            echo "{\"success\":true,\"profile\":\"max_throughput\",\"message\":\"Max Throughput Active: 256-QAM active, 80MHz VHT, 8K A-MSDU, Cellular-Safe 1x1 SISO, TCP BBR active\"}"
             ;;
         battery_saver)
             # Standard Power Saving Profile
@@ -680,14 +680,15 @@ cmd_apply_profile() {
             echo "{\"success\":true,\"profile\":\"battery_saver\",\"message\":\"Battery Saver Active: 802.11 standard power management enabled, 1x1 SISO\"}"
             ;;
         default|*)
-            # Reset to defaults
+            # Reset to defaults (Cellular Safe)
             cmd_set_cam 0 >/dev/null
             cmd_set_qam256 1 >/dev/null
             cmd_set_autoperf 1 >/dev/null
-            cmd_set_nss 2 >/dev/null
-            cmd_set_bw5g 3 >/dev/null
+            cmd_set_dbdc 0 >/dev/null
+            cmd_set_nss 1 >/dev/null
+            cmd_set_bw5g 2 >/dev/null
             set_cfg_val PROFILE "default"
-            echo "{\"success\":true,\"profile\":\"default\",\"message\":\"Default Optimized Profile Active (256-QAM + 2x2 MIMO 866 Mbps Boost)\"}"
+            echo "{\"success\":true,\"profile\":\"default\",\"message\":\"Default Optimized Profile Active (256-QAM TurboQAM + Cellular-Safe 1x1 SISO)\"}"
             ;;
     esac
 }

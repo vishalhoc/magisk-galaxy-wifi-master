@@ -28,12 +28,13 @@ if [ ! -f "$CFG_FILE" ]; then
 QAM256=1
 CAM=0
 AUTOPERF=1
-DBDC=2
-NSS=2
+DBDC=0
+NSS=1
 BW5G=2
 TCP_CONG=bbr
 COUNTRY=00
 PROFILE=default
+DIRECT_MODEM_HOTSPOT=1
 EOF
 fi
 
@@ -43,9 +44,9 @@ apply_wifi_settings() {
     . "$CFG_FILE" 2>/dev/null
 
     [ -z "$QAM256" ] && QAM256=1
-    [ -z "$NSS" ] && NSS=2
+    [ -z "$NSS" ] && NSS=1
     [ -z "$BW5G" ] && BW5G=2
-    [ -z "$DBDC" ] && DBDC=2
+    [ -z "$DBDC" ] && DBDC=0
     [ -z "$CAM" ] && CAM=0
     [ -z "$AUTOPERF" ] && AUTOPERF=1
     [ -z "$TCP_CONG" ] && TCP_CONG=bbr
@@ -77,8 +78,8 @@ apply_wifi_settings() {
         echo "Sta2gNss $NSS" > /proc/net/wlan/cfg 2>/dev/null
         echo "DbdcMode $DBDC" > /proc/net/wlan/cfg 2>/dev/null
         echo "ApBw $BW5G" > /proc/net/wlan/cfg 2>/dev/null
-        echo "Ap5gBw 2" > /proc/net/wlan/cfg 2>/dev/null
-        echo "Sta5gBw 2" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Ap5gBw $BW5G" > /proc/net/wlan/cfg 2>/dev/null
+        echo "Sta5gBw $BW5G" > /proc/net/wlan/cfg 2>/dev/null
         echo "SapOverwriteAcsChnlBw 1" > /proc/net/wlan/cfg 2>/dev/null
         echo "TxMaxAmsduInAmpduLen 8192" > /proc/net/wlan/cfg 2>/dev/null
         echo "NetifStopTh 256" > /proc/net/wlan/cfg 2>/dev/null
@@ -94,18 +95,7 @@ apply_wifi_settings() {
     fi
 
     echo "$TCP_CONG" > /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null
-
-    # Also ensure vendor/firmware/wifi.cfg has persistent settings
-    if [ -f /vendor/firmware/wifi.cfg ]; then
-        grep -q "Nss 2" /vendor/firmware/wifi.cfg 2>/dev/null || {
-            mount -o remount,rw /vendor 2>/dev/null
-            mount -o remount,rw / 2>/dev/null
-        }
-    fi
 }
-
-# Ensure MTK Wi-Fi driver power is active
-[ -e /dev/wmtWifi ] && echo 1 > /dev/wmtWifi 2>/dev/null
 
 # Apply initial boot settings
 apply_wifi_settings
@@ -140,13 +130,9 @@ start_web_daemon
         # 1. Keep Web UI alive
         start_web_daemon
 
-        # 2. Keep MTK Wi-Fi chip awake
-        [ -e /dev/wmtWifi ] && echo 1 > /dev/wmtWifi 2>/dev/null
-
-        # 3. Check and re-enforce driver settings against reversion
+        # 2. Check and re-enforce driver settings against reversion
         if [ -f /proc/net/wlan/cfg ]; then
-            if ! grep -q "D:Probe256QAM|1" /proc/net/wlan/cfg 2>/dev/null || \
-               ! grep -q "D:Nss|2" /proc/net/wlan/cfg 2>/dev/null; then
+            if ! grep -q "D:Probe256QAM|1" /proc/net/wlan/cfg 2>/dev/null; then
                 apply_wifi_settings
             fi
         fi

@@ -1,12 +1,7 @@
-# Galaxy Wi-Fi Master & Telephony Coexistence Properties
+# Galaxy Wi-Fi Master Configuration Properties
 # Author: hoc
-persist.vendor.connsys.bt_wlan_coex=1
-persist.vendor.connsys.wlan_bt_timeshare=1
-persist.vendor.connsys.pta_enable=1
-persist.vendor.connsys.gps_wlan_coex=1
 ro.mediatek.wlan.p2p=1
 ro.mediatek.wlan.wsc=1
-vendor.wifi.dualconcurrent.interface=swlan0
 ro.vendor.wifi.sap.interface=swlan0
 wifi.supplicant_scan_interval=180
 wifi.direct.interface=p2p0

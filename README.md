@@ -15,22 +15,20 @@ Operating System: **OneUI 5.1 / Android 13 (Linux 4.14.186)**
 * **Master Unlock**: Dynamically writes `Probe256QAM 1` directly to `/proc/net/wlan/cfg` at boot, unlocking 256-QAM high-density symbol modulation on both 2.4 GHz and 5 GHz.
 * **Performance Gain**: Boosts peak 2.4 GHz link speeds from **150/300 Mbps to 200/400 Mbps (+33% throughput)** on compatible Wi-Fi routers!
 
-### 2. ⚡ 5GHz Hotspot & Wi-Fi 866.7 Mbps / 1733 Mbps Speed Unlock (2x2 MIMO)
-* **Stock Limitation**: Samsung's stock driver hardcodes `Nss=1` (1 Spatial Stream / 1x1 SISO) and `ApBw=2` (80MHz). Under 802.11ac VHT80 MCS9, this strictly caps peak 5GHz Hotspot and link speeds to **433.3 Mbps**.
-* **Master Unlock**: The MT6631 CONNSYS 2.0 hardware natively supports 2 Spatial Streams (`D:Nss|2`, `D:Ap5gNss|2`) and 160MHz bandwidth (`D:ApBw|3`). By dynamically writing `Nss 2`, `Ap5gNss 2`, `Go5gNss 2`, `ApBw 3`, and `Ap5gBw 3` to `/proc/net/wlan/cfg`, the module activates **2x2 MIMO**:
-  * **80 MHz, 2x2 MIMO**: **866.7 Mbps** (2x speed boost over stock 433 Mbps!)
-  * **160 MHz, 2x2 MIMO**: **1733.3 Mbps** (4x theoretical peak throughput!)
+### 2. 🛡️ Cellular & Wi-Fi RF Coexistence Protection (Dimensity 720 Architecture)
+* **Hardware Architecture**: On the MediaTek Dimensity 720 (`MT6853`), the secondary RF front-end path and internal antenna switch matrix are **shared** between MT6631 Wi-Fi and the cellular modem (LTE/5G NR diversity Rx antenna for B40/B41/N41/N78).
+* **Safe Default Mode (1x1 SISO - Recommended)**: The module defaults to `Nss=1` and `DbdcMode=0`. This ensures 100% of the secondary antenna switch path is preserved for cellular reception, providing maximum 4G/5G signal strength, full carrier aggregation, and rock-solid network stability.
+* **Optional 2x2 MIMO 866 Mbps Boost**: Available on-demand via the Web Control Panel or CLI (`wifi_master set_nss 2`) for high-speed local LAN file transfers when cellular reception is not a priority.
 
 ### 3. 🎮 Ultra-Low Latency Continuous Access Mode (CAM) Gaming Engine
 * **The Problem**: Standard 802.11 power-saving modes (PSM) periodically put the Wi-Fi transceiver to sleep between beacon intervals, resulting in 50–150ms latency spikes and jitter during online gaming.
 * **The Solution**: Continuous Access Mode (CAM) locks the MT6631 transceiver into continuous active receive/transmit state via `/proc/net/wlan/setCAM 1`. Eliminates sleep cycles and stabilizes packet delivery to 0–1ms jitter.
 
 ### 4. 🌐 Dual Band Dual Concurrent (DBDC) Engine
-* Unlocks hardware-level simultaneous dual-band concurrent operation (`DbdcMode 2` on MT6631), allowing simultaneous connection to a 5 GHz uplink while broadcasting a 2.4 GHz Hotspot (`swlan0` + `wlan0`).
+* Hardware-level dual-band concurrent operation (`DbdcMode 2` on MT6631). Defaulted to `0` to prevent RF antenna contention with cellular diversity. Can be enabled on-demand when simultaneous 2.4 GHz + 5 GHz operations are required.
 
-### 5. 🔓 All-Channel & DFS Restrictions Override
-* **The Problem**: Samsung's stock `/vendor/etc/wifi/indoorchannel.info` forces strict DFS radar detection restrictions and disables 5 GHz channels (DFS channels 52–144 and UNII-3 channels 149–165) for SoftAP and ad-hoc networks across several regulatory domains.
-* **The Solution**: Systemless overlay removes indoor-only channel blocks, unlocking all 5GHz channels (36–165) and 2.4GHz channels (1–14) for both Station and Hotspot broadcasting.
+### 5. 🛡️ Safe Regulatory & Coexistence Guardian
+* Operates strictly in userspace and procfs without corrupting stock vendor firmware or regulatory channel limits. Keeps carrier network profiles intact.
 
 ### 6. 📦 Packet Aggregation & Network Buffer Tuning
 * Configures 8K A-MSDU aggregation (`TxMaxAmsduInAmpduLen 8192`) and queue thresholds (`NetifStartTh 128`, `NetifStopTh 256`) to maximize frame efficiency.
